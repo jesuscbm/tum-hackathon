@@ -1,5 +1,5 @@
 import {useState,useEffect,useRef,useCallback} from 'react';
-import {Box,Text,useInput,useApp,useStdin,render} from 'ink';
+import {Box,Text,useInput,useApp,useStdin,useStdout,render} from 'ink';
 import {spawn,spawnSync} from 'node:child_process';
 import {writeFileSync,readFileSync,mkdtempSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -16,7 +16,7 @@ const openUrl=url=>{try{spawn(process.platform==='darwin'?'open':'xdg-open',[url
 function Header({statuses,view,mock}){
  const done=statuses.filter(s=>s?.status==='ok').length;
  return html`<${Box} justifyContent="space-between" paddingX=${1}>
-  <${Text}><${Text} color=${C.accent} bold>◆ lokal</${Text}><${Text} color=${C.dim}>  your local LLM, hired and paid on Cardano</${Text}>${mock?html`<${Text} color=${C.warn}>  [mock]</${Text}>`:null}</${Text}>
+  <${Text}><${Text} color=${C.accent} bold>◆ lokAl</${Text}><${Text} color=${C.dim}>  your local LLM, hired and paid on Cardano</${Text}>${mock?html`<${Text} color=${C.warn}>  [mock]</${Text}>`:null}</${Text}>
   <${Text} color=${C.dim}>${view==='wizard'?`setup ${done}/5`:view}</${Text}>
  </${Box}>`;
 }
@@ -48,7 +48,7 @@ function Hints({keys}){return html`<${Box} marginTop=${1} flexWrap="wrap">${keys
 function MachinePanel({s,ui}){
  const rec=s.recommendation;
  return html`<${Box} flexDirection="column">
-  <${Text} color=${C.dim}>lokal finds or installs a model runtime (no sudo) and picks a model that fits your hardware.</${Text}>
+  <${Text} color=${C.dim}>lokAl finds or installs a model runtime (no sudo) and picks a model that fits your hardware.</${Text}>
   <${Items} items=${s.items}/>
   ${rec?html`<${Box} marginTop=${1} flexDirection="column">
    <${Text} color=${C.dim}>Models (m to switch):</${Text}>
@@ -63,7 +63,7 @@ function JobPanel({s,ui}){
  const custom=ui.tpl%(ts.length+1)===ts.length;
  const sample=t?.samples?.[ui.sample%Math.max(t.samples.length,1)];
  return html`<${Box} flexDirection="column">
-  <${Text} color=${C.dim}>A job = a system prompt + a check. lokal only asks to be paid when the check passes.</${Text}>
+  <${Text} color=${C.dim}>A job = a system prompt + a check. lokAl only asks to be paid when the check passes.</${Text}>
   <${Box} marginTop=${1}>
    ${ts.map((x,i)=>html`<${Box} key=${x.id} borderStyle="round" borderColor=${i===ui.tpl%(ts.length+1)?C.accent:C.card} paddingX=${1} marginRight=${1}>
     <${Text} color=${x.id===s.active?C.ok:C.text}>${x.id===s.active?'✔ ':''}${x.name}</${Text}></${Box}>`)}
@@ -89,7 +89,7 @@ function JobPanel({s,ui}){
 function SokosumiPanel({s}){
  const action=s.items?.find(i=>i.command);
  return html`<${Box} flexDirection="column">
-  <${Text} color=${C.dim}>Sokosumi is the marketplace where buyers hire your agent. lokal reuses what you already have.</${Text}>
+  <${Text} color=${C.dim}>Sokosumi is the marketplace where buyers hire your agent. lokAl reuses what you already have.</${Text}>
   <${Items} items=${s.items}/>
   ${action?html`<${Box} marginTop=${1}><${Text} color=${C.warn}>One human step: press enter and sign in in the browser window that opens.</${Text}></${Box}>`:null}
   <${Hints} keys=${[['enter',s.status==='ok'?'re-check':'connect'],...(s.organizations?.length?[['o','use organization Workspace'],['p','personal']]:[])]}/>
@@ -110,7 +110,7 @@ function PayPanel({s,ui,qr}){
 
 function LivePanel({s}){
  return html`<${Box} flexDirection="column">
-  <${Text} color=${C.dim}>lokal keeps the agent, the worker and the agent API running, and restarts them if they crash.</${Text}>
+  <${Text} color=${C.dim}>lokAl keeps the agent, the worker and the agent API running, and restarts them if they crash.</${Text}>
   <${Items} items=${s.items}/>
   <${Hints} keys=${[['enter','start services'],['t','send yourself a test job'],['d','dashboard']]}/>
  </${Box}>`;
@@ -145,14 +145,17 @@ function Dashboard({jobs,earn,health,sel}){
  </${Box}>`;
 }
 
-function Logs({core}){
- const logs=core.recentLogs(30);
- return html`<${Card} title="Logs (last 30)">${logs.map((l,i)=>html`<${Text} key=${i} wrap="truncate-end"><${Text} color=${l.level==='error'?C.fail:C.accent2}>${l.source.padEnd(9)}</${Text}><${Text} color=${C.dim}>${l.line}</${Text}></${Text}>`)}<${Hints} keys=${[['w','setup'],['d','dashboard'],['q','quit']]}/></${Card}>`;
+function Logs({core,rows=30}){
+ const logs=core.recentLogs(rows*4).filter(l=>l.level!=='debug').slice(-rows);
+ return html`<${Card} title=${`Logs (last ${rows})`} flexGrow=${1}>${logs.map((l,i)=>html`<${Text} key=${i} wrap="truncate-end"><${Text} color=${l.level==='error'?C.fail:C.accent2}>${l.source.padEnd(9)}</${Text}><${Text} color=${C.dim}>${l.line}</${Text}></${Text}>`)}<${Hints} keys=${[['w','setup'],['d','dashboard'],['q','quit']]}/></${Card}>`;
 }
 
 // ---------- app ----------
 export function App({core}){
- const {exit}=useApp();const {setRawMode}=useStdin();
+ const {exit}=useApp();const {setRawMode}=useStdin();const {stdout}=useStdout();
+ // Full window: track the terminal size; one row short so Ink doesn't fall back to clearing every frame.
+ const [size,setSize]=useState({w:stdout.columns||100,h:stdout.rows||30});
+ useEffect(()=>{const on=()=>setSize({w:stdout.columns,h:stdout.rows});stdout.on('resize',on);return ()=>{stdout.off('resize',on)}},[]);
  const [view,setView]=useState('wizard');
  const [sel,setSel]=useState(0);
  const [statuses,setStatuses]=useState([]);
@@ -168,7 +171,7 @@ export function App({core}){
   if(which!==undefined){const s=await core.status(steps[which].id);setStatuses(a=>{const b=[...a];b[which]=s;return b});return}
   setStatuses(await core.statusAll());
  },[core]);
- useEffect(()=>{refresh().then(()=>{});const onLog=e=>setLast(e);const onProg=e=>setProg(e.pct>=1?null:e);const onStep=()=>refresh();
+ useEffect(()=>{refresh().then(()=>{});const onLog=e=>{if(e.level!=='debug')setLast(e)};const onProg=e=>setProg(e.pct>=1?null:e);const onStep=()=>refresh();
   core.bus.on('log',onLog);core.bus.on('progress',onProg);core.bus.on('step',onStep);
   return ()=>{core.bus.off('log',onLog);core.bus.off('progress',onProg);core.bus.off('step',onStep)}},[]);
  // first not-done step is where we start
@@ -242,7 +245,7 @@ export function App({core}){
   if(id==='sokosumi'&&input==='p'){core.usePersonal();flash('Back to the Personal Workspace');refresh(sel)}
   if(id==='pay'){
    const need=s.items?.find(i=>i.status==='input');
-   if(key.return){if(need)setUi(u=>({...u,mode:'input',onInput:async v=>{await core.setValue(need.input.key,v);setUi(x=>({...x,mode:null}));refresh(sel)},onCancel:()=>setUi(x=>({...x,mode:null}))}));else core.runPay().then(r=>{if(r?.error)flash('✖ '+r.error);refresh(sel)})}
+   if(key.return){if(need)setUi(u=>({...u,mode:'input',onInput:async v=>{try{await core.setValue(need.input.key,v);flash('✔ Saved. Press enter to continue.')}catch(e){flash('✖ '+e.message)}setUi(x=>({...x,mode:null}));refresh(sel)},onCancel:()=>setUi(x=>({...x,mode:null}))}));else core.runPay().then(r=>{if(r?.error)flash('✖ '+r.error);refresh(sel)})}
    if(input==='f'&&s.wallet?.faucet){openUrl(s.wallet.faucet);flash('Opened the dispenser. Paste your wallet address there.')}
    if(input==='c')setUi(u=>({...u,qr:!u.qr}));
   }
@@ -253,16 +256,16 @@ export function App({core}){
  });
 
  const Panel={machine:MachinePanel,job:JobPanel,sokosumi:SokosumiPanel,pay:PayPanel,live:LivePanel}[steps[sel]?.id];
- return html`<${Box} flexDirection="column">
+ return html`<${Box} flexDirection="column" width=${size.w} height=${Math.max(10,size.h-1)}>
   <${Header} statuses=${statuses} view=${view} mock=${core.mock}/>
-  ${view==='wizard'?html`<${Box}>
+  ${view==='wizard'?html`<${Box} flexGrow=${1}>
    <${Rail} steps=${steps} statuses=${statuses} sel=${sel}/>
    <${Box} flexDirection="column" flexGrow=${1} borderStyle="round" borderColor=${C.accent} paddingX=${1}>
     <${Text} bold color=${C.text}>${sel+1}. ${steps[sel].title}  ${s.status==='running'?html`<${Spinner}/>`:null}</${Text}>
     ${s.error?html`<${Text} color=${C.fail}>${s.error}</${Text}>`:null}
     ${statuses.length?html`<${Panel} s=${s} ui=${ui} qr=${qr}/>`:html`<${Text} color=${C.dim}><${Spinner}/> checking your machine…</${Text}>`}
    </${Box}>
-  </${Box}>`:view==='dashboard'?html`<${Dashboard} jobs=${jobs} earn=${core.earnings(jobs)} health=${health} sel=${jsel}/>`:html`<${Logs} core=${core}/>`}
+  </${Box}>`:view==='dashboard'?html`<${Box} flexGrow=${1} flexDirection="column"><${Dashboard} jobs=${jobs} earn=${core.earnings(jobs)} health=${health} sel=${jsel}/></${Box}>`:html`<${Logs} core=${core} rows=${Math.max(5,size.h-9)}/>`}
   ${prog?html`<${Box} paddingX=${1}><${ProgressBar} pct=${prog.pct??0} label=${prog.label}/></${Box}>`:null}
   ${msg?html`<${Box} paddingX=${1}><${Text} color=${msg.startsWith('✖')?C.fail:C.ok}>${msg}</${Text}></${Box}>`:null}
   <${Box} paddingX=${1}><${Text} color=${C.dim} wrap="truncate-end">${last?`[${last.source}] ${last.line}`:' '}</${Text}></${Box}>
@@ -270,4 +273,13 @@ export function App({core}){
  </${Box}>`;
 }
 
-export function start(core){return render(html`<${App} core=${core}/>`,{exitOnCtrlC:false});}
+// Alternate screen buffer: the UI owns the whole window and the shell comes back untouched on exit.
+export function start(core){
+ const tty=process.stdout.isTTY;
+ const leave=()=>{if(tty)process.stdout.write('\u001b[?1049l\u001b[?25h')};
+ if(tty)process.stdout.write('\u001b[?1049h\u001b[H');
+ process.once('exit',leave);
+ const app=render(html`<${App} core=${core}/>`,{exitOnCtrlC:false});
+ app.waitUntilExit().then(leave,leave);
+ return app;
+}

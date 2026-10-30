@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {homedir} from 'node:os';
 const [cmd,...args]=process.argv.slice(2);
 const mock=process.env.LOKAL_MOCK==='1'||args.includes('--mock')||cmd==='--mock';
-const HELP=`lokal: your local LLM, hired and paid on Cardano
+const HELP=`lokAl: your local LLM, hired and paid on Cardano
 
   lokal              open the setup wizard / dashboard (terminal UI)
   lokal status       print every setup step without the UI (works over SSH, in CI)
@@ -14,7 +14,7 @@ const HELP=`lokal: your local LLM, hired and paid on Cardano
   lokal doctor       one line per layer: model, agent, worker, Sokosumi, payments
   lokal verify FILE [HASH]
                      check a result's canonical JSON against an on-chain resultHash
-  lokal uninstall    remove ~/.local/share/lokal and the lokal command
+  lokal uninstall    remove everything lokAl installed [--models] [--logout] [--all]
   --mock             fake backend, for demos and UI work`;
 async function core(){return mock?(await import('../core/mock.mjs')).createMockCore():(await import('../core/index.mjs')).createCore();}
 const ICON={ok:'✔',todo:'○',action:'➜',input:'✎',fail:'✖',warn:'!',running:'◐',off:'·'};
@@ -43,7 +43,7 @@ else if(cmd==='verify'){
  console.log(`✖ ${r.reason??'hash does not match'}`);process.exit(1);
 }
 else if(cmd==='up'){
- // Headless: start every service and stream logs (servers, SSH, tmux). Ctrl+C stops what lokal started.
+ // Headless: start every service and stream logs (servers, SSH, tmux). Ctrl+C stops what lokAl started.
  const c=await core();
  c.bus.on('log',e=>console.log(`[${e.source}] ${e.line}`));
  c.bus.on('services',s=>console.log('services: '+s.map(x=>`${x.id}=${x.status}${x.external?'(external)':''}`).join(' ')));
@@ -69,16 +69,18 @@ else if(cmd==='set'){
  let v='';
  if(process.stdin.isTTY){process.stdout.write(`${args[0]}: `);process.stdin.setRawMode(true);for await(const ch of process.stdin){const c=String(ch);if(c==='\r'||c==='\n')break;if(c==='\u0003')process.exit(130);v+=c;}process.stdin.setRawMode(false);process.stdout.write('\n');}
  else for await(const ch of process.stdin)v+=ch;
+ if(args[0]==='BLOCKFROST_API_KEY_PREPROD'&&!v.trim().startsWith('preprod')){console.error('✖ That is not a preprod key (it must start with "preprod"). Create a Cardano preprod project on blockfrost.io.');process.exit(1);}
  const {writeEnv}=await import('../core/config.mjs');writeEnv({[args[0]]:v.trim()});console.log(`✔ ${args[0]} saved to coworker/.env`);process.exit(0);
 }
 else if(cmd==='uninstall'){
- const home=process.env.LOKAL_HOME||join(homedir(),'.local','share','lokal');
- for(const p of [home,join(homedir(),'.local','bin','lokal')])if(existsSync(p)){rmSync(p,{recursive:true,force:true});console.log('removed',p);}
- console.log('Sokosumi account, Coworker and on-chain records are not touched.');
+ // Same as uninstall.sh: lokal uninstall [--models] [--logout] [--all]
+ const {spawnSync}=await import('node:child_process');const {fileURLToPath}=await import('node:url');
+ const script=fileURLToPath(new URL('../uninstall.sh',import.meta.url));
+ process.exit(spawnSync('sh',[script,...args],{stdio:'inherit'}).status??1);
 }
 else if(cmd&&cmd!=='--mock'){console.error(`unknown command: ${cmd}\n\n${HELP}`);process.exit(2);}
 else{
- if(!process.stdin.isTTY){console.error('lokal needs an interactive terminal. Use `lokal status` for plain output.');process.exit(1);}
+ if(!process.stdin.isTTY){console.error('lokAl needs an interactive terminal. Use `lokal status` for plain output.');process.exit(1);}
  const {start}=await import('../tui/app.mjs');
  const app=start(await core());
  await app.waitUntilExit();

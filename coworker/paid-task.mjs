@@ -82,7 +82,7 @@ export async function createPaidAdapter({save,answer,core:providedCore,mps:provi
     if(result&&typeof result==='object'&&result.pass===false){
      // lokal: failed check → never submit. The buyer's escrow becomes refundable after submitResultTime.
      state=await persist(task,state,{...p,stage:'check-failed',result:result.text,check:result.check});
-     try{await (await verifyRuntimeTask(await getCore(),task.id,target)).post(`/v1/tasks/${encodeURIComponent(task.id)}/events`,{comment:`lokal: the result failed its automatic check (${result.check.reasons.slice(0,2).join('; ')}). It was not submitted, so you are not charged; the escrow is refundable after the result deadline.`})}catch{}
+     try{await (await verifyRuntimeTask(await getCore(),task.id,target)).post(`/v1/tasks/${encodeURIComponent(task.id)}/events`,{comment:`lokAl: the result failed its automatic check (${result.check.reasons.slice(0,2).join('; ')}). It was not submitted, so you are not charged; the escrow is refundable after the result deadline.`})}catch{}
      return state;
     }
     const text=typeof result==='object'?result.text:result;

@@ -8,7 +8,7 @@ export const id='live',title="You're live";
 export async function status(){
  const svcs=await sup.refresh();const env=readEnv();
  const want=['agent','worker',...(env.PAID_TASKS_ENABLED==='true'?['api']:[])];
- const items=svcs.filter(s=>want.includes(s.id)).map(s=>({label:s.label,status:s.status==='running'?'ok':s.status==='failed'?'fail':'todo',detail:s.status+(s.external?' (started outside lokal)':'')}));
+ const items=svcs.filter(s=>want.includes(s.id)).map(s=>({label:s.label,status:s.status==='running'?'ok':s.status==='failed'?'fail':'todo',detail:s.status+(s.external?' (started outside lokAl)':'')}));
  const jobs=listJobs(5);
  items.push({label:'First job',status:jobs.length?'ok':'todo',detail:jobs.length?`${jobs[0].status} · ${jobs[0].id.slice(0,8)}`:'send yourself a test job'});
  return {id,title,status:items.every(i=>i.status==='ok')?'ok':'todo',items};
@@ -17,5 +17,5 @@ export async function run(){await sup.startAll();return status();}
 export async function sendTestJob(sampleIndex=0){
  const env=readEnv();const t=loadTemplate(env.LOKAL_TEMPLATE||'freeform');
  const samples=orderedSamples(t);const sample=samples[sampleIndex%Math.max(samples.length,1)];
- return sk.createTask({coworkerId:env.COWORKER_ID,name:`lokal test: ${t.name}${sample?` · ${sample.name}`:''}`,description:sample?.text??'Say hello and describe what you can do.',organizationSlug:env.SOKOSUMI_ORGANIZATION_SLUG||undefined});
+ return sk.createTask({coworkerId:env.COWORKER_ID,name:`lokAl test: ${t.name}${sample?` · ${sample.name}`:''}`,description:sample?.text??'Say hello and describe what you can do.',organizationSlug:env.SOKOSUMI_ORGANIZATION_SLUG||undefined});
 }

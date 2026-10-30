@@ -6,7 +6,7 @@ test('task listing and runtime select the same Personal or organization Workspac
  const personal=taskTarget({COWORKER_ID:'coworker'});
  assert.deepEqual(personal,{coworkerId:'coworker',organizationId:null,taskArgs:[],runtimeArgs:['--personal']});
  const organization=taskTarget({COWORKER_ID:'coworker',SOKOSUMI_ORGANIZATION_ID:'organization',SOKOSUMI_ORGANIZATION_SLUG:'event-workspace'});
- assert.deepEqual(organization,{coworkerId:'coworker',organizationId:'organization',taskArgs:['--organization-slug','event-workspace'],runtimeArgs:['--organization-id','organization']});
+ assert.deepEqual(organization,{coworkerId:'coworker',organizationId:'organization',taskArgs:['--organization-slug','event-workspace','--scope','workspace'],runtimeArgs:['--organization-id','organization']});
  assert.doesNotThrow(()=>assertTaskTarget({coworkerId:'coworker',organizationId:null},personal));
  assert.doesNotThrow(()=>assertTaskTarget({coworkerId:'coworker',organizationId:'organization'},organization));
  assert.throws(()=>assertTaskTarget({coworkerId:'coworker',organizationId:null},organization),/configured Coworker and Workspace/);

@@ -4,7 +4,7 @@ Read this first, then `README.md` (product, structure) and `docs/CONTEXT.md` (ha
 `coworker/AGENTS.md` holds the Masumi starter's own rules; they still apply inside `coworker/`.
 
 ## What this is
-**lokal** turns a local LLM into a paid agent on Sokosumi (Masumi escrow on Cardano **preprod**) from one terminal UI:
+**lokAl** turns a local LLM into a paid agent on Sokosumi (Masumi escrow on Cardano **preprod**) from one terminal UI:
 `install.sh` → `lokal` → 5-step wizard (machine & model → job → Sokosumi → payments → live) → dashboard.
 Two product twists: a deterministic **check gates payment** (failed results are never submitted, so the buyer is not
 charged), and the on-chain result hash commits to the **model weights digest and prompt hash** (`provenance.mjs`).
@@ -14,14 +14,16 @@ charged), and the on-chain result hash commits to the **model weights digest and
 npm ci && (cd coworker && npm ci)
 npm test                      # root: checks, provenance, templates
 (cd coworker && npm test)     # starter + lokal gate
-npm run smoke                 # clean-room: installs from this checkout into a temp HOME, no accounts needed
+npm run smoke                 # clean-room: install (LOKAL_NO_START=1) + CLI + tests + uninstall in a temp HOME
 node bin/lokal.mjs --mock     # full UI with fake data; touches nothing
 node bin/lokal.mjs status     # real, read-only
 ```
 CI (`.github/workflows/ci.yml`) runs all of the above on ubuntu with Node 24.22.1. Keep it green.
 Use `node --test test/*.test.mjs` (Node 24 does not accept a bare directory).
 Never require anything from the developer's machine: no absolute paths, no personal IDs, no pre-existing `.env`.
-Use `LOKAL_HOME` and `LOKAL_COWORKER_DIR` to point lokal at scratch folders when testing real steps.
+Use `LOKAL_HOME` and `LOKAL_COWORKER_DIR` to point lokAl at scratch folders when testing real steps, and
+`LOKAL_DB_CONTAINER` so a test never touches the real `lokal-mps-db` container (uninstall.sh deletes it).
+In a throwaway VM: `uninstall.sh --all` then the curl installer gives a true from-scratch run.
 
 ## Architecture contracts (keep them stable)
 - **UI ↔ engine:** the TUI (`tui/app.mjs`) only calls `createCore()` from `core/index.mjs`; `core/mock.mjs` must expose
@@ -31,7 +33,7 @@ Use `LOKAL_HOME` and `LOKAL_COWORKER_DIR` to point lokal at scratch folders when
   without throwing at the next human action.
 - **Events** (`core/events.mjs` `bus`): `log {source,line,level}`, `progress {id,label,pct}`, `step`, `job`, `services`, `try`.
 - **Config:** `coworker/.env` is written only through `writeEnv()` (merges keys, mode 600). Users never edit it.
-  lokal's own state is `~/.local/share/lokal/config.json` (`loadConfig/saveConfig`).
+  lokAl's own state is `~/.local/share/lokal/config.json` (`loadConfig/saveConfig`).
 - **Gate** (`coworker/lokal-gate.mjs`): active only when `LOKAL_TEMPLATE` is set. Returns `{text,pass,check,tries,hash}`;
   `text` is the canonical JSON from `provenance.canonicalResult()`, so `sha256(text)` is the Masumi `resultHash`.
   `paid-task.mjs` stops at stage `check-failed` when `pass === false` and never calls submit-result.
@@ -48,7 +50,7 @@ Masumi Payment Service commit `a846392…` (`pay/mps.mjs`), Ollama `v0.40.13` (`
 ## Safety rules
 - Never read, print or commit `coworker/.env`, `coworker/.local/`, `docs/*.json`, `~/.local/share/lokal/mps-seed.log`
   (wallet mnemonics) or the Sokosumi CLI vault. Secrets go over stdin, never argv or logs.
-- **One worker per Coworker.** Never start a second one; never kill processes lokal did not start
+- **One worker per Coworker.** Never start a second one; never kill processes lokAl did not start
   (the supervisor marks those `external` and leaves them alone).
 - External writes need the user's go-ahead: creating Vendors/Coworkers/Tasks, Workspace connects, registry
   registration, dispenser requests. Preprod only; never mainnet.
@@ -59,11 +61,14 @@ Verified on a real machine:
 - Llama 3.2 3B (Ollama, CPU) passes/fails the 5 invoice samples exactly as labelled; Eve agent runs on Ollama.
 - Steps 1–2 end to end (scratch coworker dir); TUI wizard + dashboard (real and mock); `status`, `verify`.
 - Installer from a local checkout into an empty HOME (private Node, sha256-checked); `npm run smoke`.
-- Payment service **phase A** (Postgres container, pinned checkout, private pnpm, install, migrate).
+- Payment service phase A and B: Postgres, pinned checkout, install, migrate, seed (wallets created), service running,
+  selling wallet recorded to `coworker/docs/payment-state.json`.
+
+- Step 4 end to end on preprod: wallets seeded, automatic test ADA from the dispenser, agent registered
+  (tx 27d3b0f8…, see `docs/evidence.md`), ~7 min from start to `RegistrationConfirmed` after the fixes.
 
 Written, not yet run for real:
-- Payment service phase B (`prisma:seed` → wallets; needs the Blockfrost key), `recordPaymentState()` (response shape
-  of `/payment-source` is a best guess: check it), dispenser request, registration, paid task.
+- A paid task (escrow lock → gated answer → submit-result → withdrawal) and a check-failed paid task.
 - Step 3 creating a *new* Vendor/Coworker/runtime key and `o` (organization Workspace connect).
 - Ollama auto-install on a machine without it; `lokal up`; supervisor restart behaviour.
 
@@ -82,6 +87,23 @@ Written, not yet run for real:
   so don't edit it under a running agent you don't own.
 - `qrcode` `utf8` output crashes with a `margin` option; Ctrl-D arrives in Ink as `ctrl+d` (ignored on purpose).
 - The payment service needs Node ≥24.22.1 <25 and calls `pnpm` from its own scripts (hence the private pnpm on PATH);
-  corepack is gone from Node 25+.
+  corepack is gone from Node 25+. `core/node24.mjs` gives it that Node even when lokAl runs on a newer one
+  (private copy in `~/.local/share/lokal/node`, sha256-checked).
+- Run the service with `pnpm exec tsx ./src/index.ts`, not `pnpm run dev` (`tsx watch` restarts it and drops locks).
+- A fresh payment source replays the shared escrow contract's entire history (every team's txs; ~96 batches, ~30 min)
+  while holding the sync lock, so nothing registers meanwhile. `mps.skipContractHistory()` sets
+  `lastIdentifierChecked` to the contract's newest tx before the first start; our wallets are new, so no data is lost.
 - Ollama's Linux release is `.tar.zst` (needs `zstd`) and ~1.5 GB.
+- `sokosumi tasks list` defaults to `--scope owned` (tasks *you* created). The worker lists with `--scope workspace`
+  (`coworker/task-target.mjs`) so it also serves tasks other Workspace members create for the Coworker.
 - Sokosumi CLI occasionally returns `{error,code}` transiently; status calls tolerate it.
+- MPS (a846392) API shapes: `/payment-source-extended` lists sources with wallet *counts* only; selling wallets come
+  from `/wallet/list?walletType=Selling&paymentSourceId=…`. Health is `/api/v1/health`.
+- The seed copies the Blockfrost key into the payment source (DB). A changed key must be PATCHed to
+  `/payment-source-extended` (`syncBlockfrostKey()`). Blockfrost keys are network-prefixed: preprod keys start with `preprod`.
+- Registration (and payments) only run while `PaymentSource.syncInProgress=false`. A killed instance leaves it `true`
+  and the service waits `SYNC_LOCK_TIMEOUT_INTERVAL` (default 300 s; lokAl sets 30) — in practice it stayed stuck, so
+  the supervisor runs `mps.clearStaleLocks()` before every start. The "No payment contracts found … an other instance"
+  warnings come from the V1/V2 *registry* tx-sync and are harmless noise.
+- The payment service needs ~5 s to shut down; the supervisor waits for the process group to exit before restarting.
+- The payment service logs a heartbeat every second; the supervisor marks those lines `debug` (file only, not the UI).

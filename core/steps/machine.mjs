@@ -26,7 +26,7 @@ export async function status(){
   const d=await ollama.detect();
   const model=cfg.model??rec.model.id;
   const has=d.running&&await ollama.hasModel(model);
-  items.push({label:'Ollama runtime',status:d.installed?'ok':'todo',detail:d.installed?`${d.binary}${d.version?` · v${d.version}`:''}`:'not installed: lokal installs it for you (no sudo)'});
+  items.push({label:'Ollama runtime',status:d.installed?'ok':'todo',detail:d.installed?`${d.binary}${d.version?` · v${d.version}`:''}`:'not installed: lokAl installs it for you (no sudo)'});
   items.push({label:'Ollama server',status:d.running?'ok':'todo',detail:d.running?d.url:'not running'});
   items.push({label:`Model ${model}`,status:has?'ok':'todo',detail:has?(cfg.digest??'downloaded'):`${rec.model.name} recommended for ${rec.reason} (~${rec.model.sizeGB} GB)`});
   items.push({label:'Test prompt',status:cfg.smokeTest?.model===model?'ok':'todo',detail:cfg.smokeTest?.model===model?`answered in ${cfg.smokeTest.seconds}s`:'not run yet'});

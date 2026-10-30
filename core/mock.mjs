@@ -14,18 +14,18 @@ export function createMockCore(){
  const statusOf={
   machine:()=>({id:'machine',title:'Your machine & model',status:st.machine>=3?'ok':'todo',model:'llama3.2:3b',items:[
    it('Hardware','ok','Intel Core i5-10210U · 8 cores · 15.3 GB RAM · no GPU, CPU inference'),
-   it('Ollama runtime',st.machine>=1,st.machine>=1?'~/.local/share/lokal/ollama · v0.40.13':'not installed: lokal installs it for you (no sudo)'),
+   it('Ollama runtime',st.machine>=1,st.machine>=1?'~/.local/share/lokal/ollama · v0.40.13':'not installed: lokAl installs it for you (no sudo)'),
    it('Model llama3.2:3b',st.machine>=2,st.machine>=2?'sha256:a80c4f17acd5…':'Llama 3.2 3B recommended for 15.3 GB RAM, CPU inference (~2 GB)'),
    it('Test prompt',st.machine>=3,st.machine>=3?'answered in 2.1s':'not run yet')]}),
   job:()=>({id:'job',title:'Pick a job',status:st.job?'ok':'todo',active:st.job,templates:listTemplates().sort((a,b)=>(a.check?.type==='none')-(b.check?.type==='none')).map(({prompt,samples,...m})=>({...m,samples:orderedSamples({samples}).map(s=>({name:s.name,expect:s.expect}))})),items:[
    it('Template',!!st.job,st.job?loadTemplate(st.job).name:'none selected'),it('Check',!!st.job,st.job?loadTemplate(st.job).check.type:'—'),it('Tried it',!!st.tried,st.tried??'try a sample before going live')]}),
   sokosumi:()=>({id:'sokosumi',title:'Connect Sokosumi',status:st.sokosumi?'ok':'todo',items:[
    it('Sokosumi CLI','ok','v1.0.4'),it('Account',st.sokosumi?'ok':'action',st.sokosumi?'you@example.com':'sign in once in your browser',{command:'sokosumi --preprod auth login'}),
-   it('Vendor',st.sokosumi,st.sokosumi?'you (lokal-you)':'lokal creates one for you'),it('Coworker',st.sokosumi,st.sokosumi?'llama3.2:3b via lokal':'lokal registers a private Coworker'),
+   it('Vendor',st.sokosumi,st.sokosumi?'you (lokal-you)':'lokAl creates one for you'),it('Coworker',st.sokosumi,st.sokosumi?'llama3.2:3b via lokal':'lokAl registers a private Coworker'),
    it('Runtime key',st.sokosumi,st.sokosumi?'stored in the CLI vault':'imported straight into the CLI vault'),it('Workspace','ok','Personal Workspace (private testing)')]}),
   pay:()=>({id:'pay',title:'Get paid',status:st.pay>=4?'ok':'todo',wallet:{address:st.pay>=1?W:null,balance:st.pay>=2?{ada:10000,usdm:0}:{ada:0,usdm:0},faucet:'https://dispenser.masumi.network/'},items:[
    it('Blockfrost key',st.bf?'ok':'input',st.bf?'set':'free preprod key from blockfrost.io',{input:st.bf?undefined:{key:'BLOCKFROST_API_KEY_PREPROD',label:'Blockfrost preprod project id',secret:true}}),
-   it('Docker','ok','found'),it('Payment service',st.pay>=1,st.pay>=1?'http://127.0.0.1:38127':'lokal installs your own instance'),
+   it('Docker','ok','found'),it('Payment service',st.pay>=1,st.pay>=1?'http://127.0.0.1:38127':'lokAl installs your own instance'),
    it('Selling wallet',st.pay>=2?'ok':st.pay>=1?'action':'todo',st.pay>=1?`${W.slice(0,20)}…${W.slice(-6)} · ${st.pay>=2?'10000':'0'} tADA`:'created by the payment service',{command:st.pay===1?'https://dispenser.masumi.network/':undefined}),
    it('Registry',st.pay>=3?'ok':'todo',st.pay>=3?'agent 7e8c1b0f9d2a44c1…':'registers your agent on Cardano preprod',{tx:st.pay>=3?'9f2c6a1be0d34c7a8e5f1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6':undefined}),
    it('Paid tasks',st.pay>=4,st.pay>=4?'enabled':'enabled after registration confirms')]}),

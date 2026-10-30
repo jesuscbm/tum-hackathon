@@ -1,3 +1,5 @@
+// lokal: `tasks list` defaults to scope=owned (only tasks *you* created). A Coworker must also see tasks other
+// Workspace members create for it, so organization listings use scope=workspace.
 export function taskTarget(env=process.env){
  const coworkerId=env.COWORKER_ID?.trim();
  if(!coworkerId||/\s/u.test(coworkerId))throw new Error('COWORKER_ID must identify your Coworker');
@@ -6,7 +8,7 @@ export function taskTarget(env=process.env){
  if(Boolean(organizationId)!==Boolean(organizationSlug))throw new Error('Set both SOKOSUMI_ORGANIZATION_ID and SOKOSUMI_ORGANIZATION_SLUG, or leave both blank');
  if(organizationId&&/\s/u.test(organizationId))throw new Error('SOKOSUMI_ORGANIZATION_ID must be a single ID');
  if(organizationSlug&&!/^[a-zA-Z0-9_-]+$/u.test(organizationSlug))throw new Error('SOKOSUMI_ORGANIZATION_SLUG must be a valid Workspace slug');
- return {coworkerId,organizationId,taskArgs:organizationSlug?['--organization-slug',organizationSlug]:[],runtimeArgs:organizationId?['--organization-id',organizationId]:['--personal']};
+ return {coworkerId,organizationId,taskArgs:organizationSlug?['--organization-slug',organizationSlug,'--scope','workspace']:[],runtimeArgs:organizationId?['--organization-id',organizationId]:['--personal']};
 }
 export function isTaskForTarget(task,target){
  return (task?.coworkerId??task?.assigneeId)===target.coworkerId&&task.organizationId===target.organizationId;

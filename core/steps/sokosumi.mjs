@@ -6,15 +6,15 @@ export const id='sokosumi',title='Connect Sokosumi';
 export async function status(){
  const cli=await sk.installed();
  const env=readEnv(),cfg=loadConfig();
- const items=[{label:'Sokosumi CLI',status:cli.installed?(cli.pinned?'ok':'warn'):'todo',detail:cli.installed?`v${cli.version}${cli.pinned?'':` (lokal is tested with ${sk.CLI_VERSION})`}`:`installed by the lokal installer (npm i -g @masumi_network/sokosumi@${sk.CLI_VERSION})`}];
+ const items=[{label:'Sokosumi CLI',status:cli.installed?(cli.pinned?'ok':'warn'):'todo',detail:cli.installed?`v${cli.version}${cli.pinned?'':` (lokAl is tested with ${sk.CLI_VERSION})`}`:`installed by the lokal installer (npm i -g @masumi_network/sokosumi@${sk.CLI_VERSION})`}];
  if(!cli.installed)return {id,title,status:'todo',items};
  const user=await sk.whoami();
  items.push({label:'Account',status:user?'ok':'action',detail:user?user.email:'sign in once in your browser',command:user?undefined:'sokosumi --preprod auth login'});
  if(!user)return {id,title,status:'action',items};
  const v=await sk.vendor();
- items.push({label:'Vendor',status:v?'ok':'todo',detail:v?`${v.name} (${v.slug})`:'lokal creates one for you'});
+ items.push({label:'Vendor',status:v?'ok':'todo',detail:v?`${v.name} (${v.slug})`:'lokAl creates one for you'});
  const coworkerId=env.COWORKER_ID;
- items.push({label:'Coworker',status:coworkerId?'ok':'todo',detail:coworkerId?`${cfg.coworkerName??''} ${coworkerId}`.trim():'lokal registers a private Coworker'});
+ items.push({label:'Coworker',status:coworkerId?'ok':'todo',detail:coworkerId?`${cfg.coworkerName??''} ${coworkerId}`.trim():'lokAl registers a private Coworker'});
  const keyOk=!!coworkerId&&(cfg.keyImported===coworkerId||cfg.keyImported===undefined&&!!coworkerId);
  items.push({label:'Runtime key',status:keyOk?'ok':'todo',detail:keyOk?'stored in the CLI vault':'imported straight into the CLI vault'});
  const ws=env.SOKOSUMI_ORGANIZATION_SLUG;
@@ -31,9 +31,11 @@ export async function run(){
  if(!v){const base=s.user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,24);v=await sk.createVendor(`${base} (lokal)`,`lokal-${base}-${Date.now().toString(36).slice(-4)}`);log('sokosumi',`Vendor created: ${v.slug}`);}
  let coworkerId=readEnv().COWORKER_ID;
  if(!coworkerId){
-  const cfg=loadConfig();const name=`${cfg.model??'local model'} via lokal`;
-  const c=await sk.registerCoworker({vendorId:v.id,name,description:'A local open-weights model served with lokal. Results are checked before payment.'});
-  coworkerId=c.id;writeEnv({COWORKER_ID:coworkerId});saveConfig({coworkerName:name,vendorId:v.id});log('sokosumi',`Coworker registered: ${coworkerId}`);
+  const cfg=loadConfig();const name=`${cfg.model??'local model'} via lokAl`;
+  // Reinstalls (e.g. after uninstall.sh) reuse the Coworker lokal registered before instead of piling up new ones.
+  const prior=(await sk.ownedCoworkers()).find(c=>/ via lokal$/i.test(c.name??''));
+  const c=prior??await sk.registerCoworker({vendorId:v.id,name,description:'A local open-weights model served with lokAl. Results are checked before payment.'});
+  coworkerId=c.id;writeEnv({COWORKER_ID:coworkerId});saveConfig({coworkerName:c.name??name,vendorId:v.id});log('sokosumi',`${prior?'Reusing':'Registered'} Coworker ${c.name??name} (${coworkerId})`);
   await sk.importRuntimeKey(coworkerId);saveConfig({keyImported:coworkerId});log('sokosumi','Runtime key imported into the CLI vault');
  }
  return status();
