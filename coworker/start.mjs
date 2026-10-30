@@ -2,7 +2,7 @@ import {spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {dirname,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {readFileSync} from 'node:fs';
+import {readFileSync,realpathSync} from 'node:fs';
 export function eveAddress(env){
  const url=env.EVE_URL?new URL(env.EVE_URL):null;
  const port=Number(env.EVE_PORT??url?.port);
@@ -16,7 +16,8 @@ export function eveBinary(resolveModule=createRequire(import.meta.url).resolve){
  if(typeof pkg.bin?.eve!=='string')throw new Error('Installed eve package has no eve executable');
  return resolve(dirname(manifest),pkg.bin.eve);
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+// lokal: realpath, because extra Coworkers run this file through a symlink.
+if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(resolve(process.argv[1]))).href){
  const {port,url}=eveAddress(process.env);
  const child=spawn(process.execPath,[eveBinary(),'dev','--no-ui','--no-default-extensions','--host','127.0.0.1','--port',String(port)],{stdio:'inherit',env:{...process.env,EVE_PORT:String(port),EVE_URL:url}});
  child.on('error',()=>{console.error('Eve could not start');process.exitCode=1;});

@@ -1,16 +1,31 @@
 import * as sk from '../sokosumi.mjs';
 import {loadConfig,saveConfig,readEnv,writeEnv} from '../config.mjs';
 import {log} from '../events.mjs';
+import {isHeadless,takeOpenedUrl} from '../vault.mjs';
+import {hostname,userInfo} from 'node:os';
 // Step 3: account → Vendor → Coworker → runtime key → Workspace. Reuses whatever already exists.
 export const id='sokosumi',title='Connect Sokosumi';
+// Over SSH there is no browser: sign in with an API key (pasted), or open the sign-in link on your laptop
+// through an SSH tunnel to the CLI's callback port. The xdg-open stand-in records that link (core/vault.mjs).
+const KEY_INPUT={key:'SOKOSUMI_API_KEY',label:`Sokosumi API key (create one at ${sk.API_KEY_PAGE}, starts with soko_preprod_)`,secret:true};
+let signIn=null;
+export function tunnelCommand(){
+ const host=(process.env.SSH_CONNECTION??'').split(' ')[2]||hostname();
+ return `ssh -N -L 53682:127.0.0.1:53682 ${userInfo().username}@${host}`;
+}
 export async function status(){
  const cli=await sk.installed();
  const env=readEnv(),cfg=loadConfig();
  const items=[{label:'Sokosumi CLI',status:cli.installed?(cli.pinned?'ok':'warn'):'todo',detail:cli.installed?`v${cli.version}${cli.pinned?'':` (lokAl is tested with ${sk.CLI_VERSION})`}`:`installed by the lokal installer (npm i -g @masumi_network/sokosumi@${sk.CLI_VERSION})`}];
  if(!cli.installed)return {id,title,status:'todo',items};
  const user=await sk.whoami();
- items.push({label:'Account',status:user?'ok':'action',detail:user?user.email:'sign in once in your browser',command:user?undefined:'sokosumi --preprod auth login'});
- if(!user)return {id,title,status:'action',items};
+ const headless=isHeadless();
+ const url=takeOpenedUrl();if(url){signIn={url,at:Date.now()};log('sokosumi',`Sign-in link: ${url}`);}
+ if(user)signIn=null;
+ items.push(user?{label:'Account',status:'ok',detail:user.email}
+  :headless?{label:'Account',status:'input',detail:'no browser on this machine: paste a Sokosumi API key, or press b for a sign-in link',input:KEY_INPUT}
+  :{label:'Account',status:'action',detail:'sign in once in your browser',command:'sokosumi --preprod auth login'});
+ if(!user)return {id,title,status:headless?'input':'action',items,headless,signIn:signIn&&{...signIn,tunnel:tunnelCommand()}};
  const v=await sk.vendor();
  items.push({label:'Vendor',status:v?'ok':'todo',detail:v?`${v.name} (${v.slug})`:'lokAl creates one for you'});
  const coworkerId=env.COWORKER_ID;
@@ -21,11 +36,14 @@ export async function status(){
  const orgs=(await sk.workspaces().catch(()=>[])).filter(w=>w.organizationId);
  items.push({label:'Workspace',status:'ok',detail:ws?`${ws} (organization)`:`Personal Workspace (private testing)${orgs.length?` · press o to use ${orgs[0].name}`:''}`});
  const done=v&&coworkerId&&keyOk;
- return {id,title,status:done?'ok':'todo',items,user,vendor:v,coworkerId,workspace:ws??'personal',organizations:orgs};
+ if(v&&loadConfig().vendorId!==v.id)saveConfig({vendorId:v.id});
+ return {id,title,status:done?'ok':'todo',items,user,vendor:v,coworkerId,workspace:ws??'personal',organizations:orgs,headless};
 }
 export function login(){sk.login();}
+export async function loginWithKey(key){await sk.loginWithKey(key);return status();}
 export async function run(){
  let s=await status();
+ if(!s.user&&s.headless)return s; // waits for an API key (or b → sign-in link)
  if(!s.user){sk.login();for(let i=0;i<90&&!(await sk.whoami());i++)await new Promise(r=>setTimeout(r,2000));s=await status();if(!s.user)return s;}
  let v=s.vendor;
  if(!v){const base=s.user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,24);v=await sk.createVendor(`${base} (lokal)`,`lokal-${base}-${Date.now().toString(36).slice(-4)}`);log('sokosumi',`Vendor created: ${v.slug}`);}

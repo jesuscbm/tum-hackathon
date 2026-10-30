@@ -22,17 +22,17 @@ export function Badge({pass}){
  return pass?html`<${Text} backgroundColor=${C.ok} color="black" bold> ✔ CHECK PASSED </${Text}>`:html`<${Text} backgroundColor=${C.fail} color="black" bold> ✖ CHECK FAILED </${Text}>`;
 }
 export function Key({k,label}){return html`<${Text}><${Text} color=${C.accent} bold>${k}</${Text}><${Text} color=${C.dim}> ${label}   </${Text}></${Text}>`;}
-export function Card({title,children,color=C.card,width,flexGrow}){
- return html`<${Box} borderStyle="round" borderColor=${color} flexDirection="column" paddingX=${1} width=${width} flexGrow=${flexGrow}>
+export function Card({title,children,color=C.card,width,flexGrow,flexShrink}){
+ return html`<${Box} borderStyle="round" borderColor=${color} flexDirection="column" paddingX=${1} width=${width} flexGrow=${flexGrow} flexShrink=${flexShrink??(width?0:1)}>
   ${title?html`<${Text} color=${C.accent} bold>${title}</${Text}>`:null}
   ${children}
  </${Box}>`;
 }
 // Single-line text input. Secret values are masked.
-export function TextInput({label,secret,onSubmit,onCancel}){
- const [v,set]=useState('');
+export function TextInput({label,secret,onSubmit,onCancel,initial='',allowEmpty=false,hint}){
+ const [v,set]=useState(initial);
  useInput((input,key)=>{
-  if(key.return){if(v.trim())onSubmit(v.trim());return}
+  if(key.return){if(v.trim()||allowEmpty)onSubmit(v.trim());return}
   if(key.escape){onCancel?.();return}
   if(key.backspace||key.delete){set(x=>x.slice(0,-1));return}
   if(input&&!key.ctrl&&!key.meta)set(x=>x+input.replace(/[\r\n]/g,''));
@@ -41,6 +41,6 @@ export function TextInput({label,secret,onSubmit,onCancel}){
  return html`<${Box} flexDirection="column" marginTop=${1}>
   <${Text} color=${C.warn}>${label}</${Text}>
   <${Box} borderStyle="round" borderColor=${C.accent} paddingX=${1}><${Text}>${shown}<${Text} color=${C.accent}>▌</${Text}></${Text}></${Box}>
-  <${Text} color=${C.dim}>enter to save · esc to cancel</${Text}>
+  <${Text} color=${C.dim}>${hint??'enter to save · esc to cancel'}${allowEmpty?' · empty is fine':''}</${Text}>
  </${Box}>`;
 }

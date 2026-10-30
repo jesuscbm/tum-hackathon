@@ -4,7 +4,9 @@ export function requireAgentAuthor(author) {
  if (typeof author !== 'string' || !author.trim()) throw Error('AGENT_AUTHOR must contain your author name');
  return author.trim();
 }
-export function registrationUrl(port = '21950') {
+// lokal: a public URL (AGENT_PUBLIC_URL) wins; buyers outside this machine cannot reach 127.0.0.1.
+export function registrationUrl(port = '21950', publicUrl) {
+ if (publicUrl?.trim()) { const u = new URL(publicUrl.trim()); if (!['http:', 'https:'].includes(u.protocol)) throw Error('AGENT_PUBLIC_URL must be an http(s) URL'); return u.href.replace(/\/$/, ''); }
  if (!/^\d+$/.test(String(port)) || Number(port) < 1 || Number(port) > 65535) throw Error('AGENT_API_PORT must be an integer between 1 and 65535');
  return `http://127.0.0.1:${Number(port)}`;
 }

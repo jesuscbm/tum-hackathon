@@ -4,6 +4,10 @@ import {existsSync,readFileSync,writeFileSync,mkdirSync,readdirSync} from 'node:
 import {answer,client} from './client.mjs';
 import {inputHash,resultHash,sha256} from './standard-hash.mjs';
 import {confirmedState} from './paid-task.mjs';
+import {gate} from './lokal-gate.mjs';
+import {networkOf} from '../core/network.mjs';
+// lokal: network from LOKAL_NETWORK (preprod default); answers go through the check gate like the worker's.
+const net=networkOf();const gated=gate(answer);
 const jobsDir='.local/standard-jobs';mkdirSync(jobsDir,{recursive:true,mode:0o700});
 const token=process.env.MPS_RUNTIME_TOKEN;
 const registry=()=>JSON.parse(readFileSync('docs/registration-state.json','utf8'));
@@ -39,26 +43,28 @@ createServer(async(req,res)=>{
  if(job){if(job.inputHash!==inputHash(input.input_data,nonce))return respond(res,409,{error:'Nonce already used with another input'});return respond(res,job.response?200:409,job.response||{error:'Payment outcome requires inspection'});}
  const now=Date.now();const minute=60000;
  job={id:randomUUID(),nonceKey:key,nonce,input:input.input_data,inputHash:inputHash(input.input_data,nonce),status:'awaiting_payment',phase:'payment-pending'};save(job);
- const payment=await mps('/payment',{network:'Preprod',paymentSourceType:'Web3CardanoV2',supportedPaymentSourceIndex:reg.supportedPaymentSourceIndex,inputHash:job.inputHash,agentIdentifier:reg.agentIdentifier,identifierFromPurchaser:nonce,RequestedFunds:[{unit:'16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d',amount:'1000000'}],payByTime:new Date(now+10*minute).toISOString(),submitResultTime:new Date(now+20*minute).toISOString(),unlockTime:new Date(now+36*minute).toISOString(),externalDisputeUnlockTime:new Date(now+52*minute).toISOString()});
+ const payment=await mps('/payment',{network:net.mps,paymentSourceType:'Web3CardanoV2',supportedPaymentSourceIndex:reg.supportedPaymentSourceIndex,inputHash:job.inputHash,agentIdentifier:reg.agentIdentifier,identifierFromPurchaser:nonce,RequestedFunds:[{unit:net.usdm,amount:String(template.price?.amount??'1000000')}],payByTime:new Date(now+10*minute).toISOString(),submitResultTime:new Date(now+20*minute).toISOString(),unlockTime:new Date(now+36*minute).toISOString(),externalDisputeUnlockTime:new Date(now+52*minute).toISOString()});
  job.payment=payment;job.phase='waiting-payment';job.response={id:job.id,input_hash:job.inputHash,identifierFromPurchaser:nonce,blockchainIdentifier:payment.blockchainIdentifier,agentIdentifier:reg.agentIdentifier,sellerVKey:reg.sellerVkey,paymentSourceType:'Web3CardanoV2',supportedPaymentSourceIndex:reg.supportedPaymentSourceIndex,payByTime:Number(payment.payByTime),submitResultTime:Number(payment.submitResultTime),unlockTime:Number(payment.unlockTime),externalDisputeUnlockTime:Number(payment.externalDisputeUnlockTime)};save(job);return respond(res,200,job.response);
  }catch(e){respond(res,500,{error:'Request failed. Inspect the saved job state before retrying.'})}
-}).listen(port,'127.0.0.1',()=>console.log('Agent API running',port));
+}).listen(port,process.env.AGENT_API_HOST||'127.0.0.1',()=>console.log('Agent API running',port));
 let busy=false;
 setInterval(async()=>{
  if(busy)return;busy=true;
  try{for(const file of readdirSync(jobsDir).filter(x=>/^[0-9a-f-]{36}\.json$/.test(x))){
  const job=load(file.replace('.json',''));try{
  if(!['waiting-payment','awaiting-result'].includes(job.phase))continue;
- const payment=await mps('/payment/resolve-blockchain-identifier',{network:'Preprod',blockchainIdentifier:job.payment.blockchainIdentifier,includeHistory:'true'});
+ const payment=await mps('/payment/resolve-blockchain-identifier',{network:net.mps,blockchainIdentifier:job.payment.blockchainIdentifier,includeHistory:'true'});
  if(job.phase==='awaiting-result'){if(payment.onChainState==='ResultSubmitted'&&payment.resultHash===job.resultHash&&confirmedState(payment,'ResultSubmitted')){job.phase='result-confirmed';job.status='completed';save(job)}continue;}
  if(payment.onChainState!=='FundsLocked'||!confirmedState(payment,'FundsLocked'))continue;
  if(Number(payment.submitResultTime)<=Date.now()+120000){job.phase='deadline-blocked';job.status='failed';save(job);continue;}
  job.phase='model-pending';job.status='running';save(job);
  if(Number(payment.submitResultTime)<=Date.now()+120000)continue;
- job.result=await answer(job.input.prompt,`${jobsDir}/${job.id}-session`,Number(payment.submitResultTime));
- writeFileSync(`${jobsDir}/${job.id}.txt`,job.result,{mode:0o600});job.resultHash=resultHash(job.result,job.nonce);job.phase='submit-pending';save(job);
+ const g=await gated(job.input.prompt,`${jobsDir}/${job.id}-session`,Number(payment.submitResultTime));
+ job.result=g.text;job.check=g.check;writeFileSync(`${jobsDir}/${job.id}.txt`,job.result,{mode:0o600});
+ // lokal: a failed check is never submitted; the buyer's escrow becomes refundable after submitResultTime.
+ if(!g.pass){job.phase='check-failed';job.status='failed';save(job);continue;}job.resultHash=resultHash(job.result,job.nonce);job.phase='submit-pending';save(job);
  if(Number(payment.submitResultTime)<=Date.now()){job.phase='deadline-blocked';job.status='failed';save(job);continue;}
- await mps('/payment/submit-result',{network:'Preprod',blockchainIdentifier:payment.blockchainIdentifier,submitResultHash:job.resultHash});
+ await mps('/payment/submit-result',{network:net.mps,blockchainIdentifier:payment.blockchainIdentifier,submitResultHash:job.resultHash});
  job.phase='awaiting-result';save(job);
  }catch(e){console.error('Standard job needs inspection',job.id)}
  }}finally{busy=false}

@@ -2,7 +2,7 @@ import {existsSync,readFileSync,writeFileSync,copyFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {COWORKER_DIR} from '../paths.mjs';
 import {loadConfig,saveConfig,writeEnv,readEnv} from '../config.mjs';
-import {listTemplates,loadTemplate,saveCustomTemplate,orderedSamples} from '../../templates/index.mjs';
+import {listTemplates,loadTemplate,saveCustomTemplate,orderedSamples,importMarkdown} from '../../templates/index.mjs';
 import {log} from '../events.mjs';
 // Step 2: pick a job template (system prompt + check). Writes it as the agent's instructions.
 export const id='job',title='Pick a job';
@@ -27,5 +27,7 @@ export async function select(templateId){
  return status();
 }
 export async function createCustom({id:tid,name,prompt,check}){saveCustomTemplate({id:tid,name,prompt,check});return select(tid);}
+// A Markdown prompt with front matter (see templates/index.mjs), copied into the custom templates folder.
+export async function importPrompt(file){const t=importMarkdown(file);log('job',`Imported ${t.name} (${t.id}) from ${file}`);return select(t.id);}
 export function recordTry(templateId,sample,pass){const cfg=loadConfig();saveConfig({tried:{...(cfg.tried??{}),[templateId]:{sample,pass,at:Date.now()}}});}
 export const run=async()=>status();

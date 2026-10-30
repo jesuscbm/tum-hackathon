@@ -16,6 +16,11 @@ test('registration uses the configured loopback port', () => {
  assert.equal(registrationUrl(), 'http://127.0.0.1:21950');
  for (const value of ['0','65536','abc','21950.5','']) assert.throws(() => registrationUrl(value));
 });
+test('a public URL replaces the loopback address (lokal)', () => {
+ assert.equal(registrationUrl('21950', 'https://agent.example.com/'), 'https://agent.example.com');
+ assert.equal(registrationUrl('21950', ' '), 'http://127.0.0.1:21950');
+ assert.throws(() => registrationUrl('21950', 'ftp://x'));
+});
 test('saved key requires its private unmasked token', () => {
  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'registration-test-'));
  const file = path.join(dir, 'runtime.env');

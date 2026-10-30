@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import { registrationUrl, requireSavedRuntimeToken, requireAgentAuthor } from './registration-config.mjs';
+import { networkOf } from '../core/network.mjs';
+const net = networkOf();
 const statePath = 'docs/registration-state.json';
 const payment = JSON.parse(fs.readFileSync('docs/payment-state.json'));
 let state = fs.existsSync(statePath) ? JSON.parse(fs.readFileSync(statePath)) : {provenance:'VERIFIED', sourceId:payment.sourceId, walletId:payment.walletId};
@@ -11,7 +13,7 @@ if(process.argv[2]==='key'){
  if(state.runtimeKeyId){requireSavedRuntimeToken('.local/mps-runtime.env');console.log('Runtime key already saved',state.runtimeKeyId);process.exit(0);}
  if(state.keyWritePending)throw Error('Previous key write uncertain; inspect API key records before retry');
  state.keyWritePending=true;save();
- const key=await request('/api-key',{usageLimited:'false',UsageCredits:[],NetworkLimit:['Preprod'],ChainIdLimit:[],canRead:true,canPay:true,canAdmin:false,walletScopeEnabled:true,WalletScopeHotWalletIds:[payment.walletId],x402WalletScopeEnabled:true,X402WalletScopeEvmWalletIds:[]});
+ const key=await request('/api-key',{usageLimited:'false',UsageCredits:[],NetworkLimit:[net.mps],ChainIdLimit:[],canRead:true,canPay:true,canAdmin:false,walletScopeEnabled:true,WalletScopeHotWalletIds:[payment.walletId],x402WalletScopeEnabled:true,X402WalletScopeEvmWalletIds:[]});
  state.runtimeKeyId=key.id;state.keyWritePending=false;save();
  if(typeof key.token!=='string'||key.token.startsWith('*****'))throw Error('Created key token was not revealed; key ID preserved for supported token update');
  fs.writeFileSync('.local/mps-runtime.env',`MPS_RUNTIME_TOKEN=${key.token}\n`,{mode:0o600});
@@ -24,10 +26,10 @@ if(process.argv[2]==='key'){
  const sources=await request('/payment-source?take=100');
  const find=(x)=>{if(Array.isArray(x)){for(const y of x){const r=find(y);if(r)return r;}}else if(x&&typeof x==='object'){if(x.id===payment.sourceId)return x;for(const y of Object.values(x)){const r=find(y);if(r)return r;}}};
  const source=find(sources);if(!source||wallet.walletAddress!==payment.sellerAddress)throw Error('Dedicated source or wallet mismatch');
- const body={network:'Preprod',type:'Standard',sellingWalletVkey:wallet.walletVkey,supportedPaymentSources:[{chain:'Cardano',network:'Preprod',paymentSourceType:'Web3CardanoV2',address:source.smartContractAddress,pricing:{pricingType:'Dynamic'}}],ExampleOutputs:[],Tags:['lokal','local-llm',process.env.LOKAL_TEMPLATE||'freeform'],name:process.env.LOKAL_AGENT_NAME||'lokAl agent',description:process.env.LOKAL_AGENT_DESCRIPTION||'A local open-weights model served with lokAl. Results are checked before payment and commit to the model digest.',Capability:{name:process.env.ZAI_MODEL,version:'1'},Author:{name:author},apiBaseUrl:registrationUrl(process.env.AGENT_API_PORT)};
+ const body={network:net.mps,type:'Standard',sellingWalletVkey:wallet.walletVkey,supportedPaymentSources:[{chain:'Cardano',network:net.mps,paymentSourceType:'Web3CardanoV2',address:source.smartContractAddress,pricing:{pricingType:'Dynamic'}}],ExampleOutputs:[],Tags:['lokal','local-llm',process.env.LOKAL_TEMPLATE||'freeform'],name:process.env.LOKAL_AGENT_NAME||'lokAl agent',description:process.env.LOKAL_AGENT_DESCRIPTION||'A local open-weights model served with lokAl. Results are checked before payment and commit to the model digest.',Capability:{name:process.env.ZAI_MODEL,version:'1'},Author:{name:author},apiBaseUrl:registrationUrl(process.env.AGENT_API_PORT,process.env.AGENT_PUBLIC_URL)};
  state.registrationWritePending=true;state.request=body;save();
  const r=await request('/registry',body);state.registrationId=r.id;state.registrationWritePending=false;state.registration=r;save();console.log(JSON.stringify(r));
 }else{
- const r=await request('/registry?network=Preprod&filterPaymentSourceType=Web3CardanoV2&limit=100');
+ const r=await request(`/registry?network=${net.mps}&filterPaymentSourceType=Web3CardanoV2&limit=100`);
  state.observedRegistry=r; const walk=x=>{if(Array.isArray(x)){for(const y of x)walk(y);}else if(x&&typeof x==='object'){if(x.id===state.registrationId){state.registration=x;state.agentIdentifier=x.agentIdentifier;state.registrationState=x.state;}else Object.values(x).forEach(walk);}};walk(r);save();console.log(JSON.stringify({id:state.registrationId,state:state.registration?.state,agentIdentifier:state.agentIdentifier,transaction:state.registration?.CurrentTransaction,error:state.registration?.error}));
 }

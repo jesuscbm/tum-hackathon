@@ -6,6 +6,10 @@ import {reply} from './comments.mjs';
 import {createPaidAdapter,isPaidReady} from './paid-task.mjs';
 import {taskTarget,isTaskForTarget} from './task-target.mjs';
 import {gate} from './lokal-gate.mjs';
+import {networkOf} from '../core/network.mjs';
+// lokal: paid Sokosumi Tasks use the Coworker runtime, which Sokosumi CLI 1.0.4 offers on preprod only.
+// On mainnet, paid jobs come in through the MIP-003 agent API instead; Tasks here are answered free.
+const paidTasks=process.env.PAID_TASKS_ENABLED==='true'&&networkOf().test;
 const gated=gate(answer);
 const target=taskTarget();
 const id=target.coworkerId;
@@ -24,8 +28,8 @@ while(true){
  const journal=`.local/${t.id}.json`,resultFile=`.local/${t.id}.txt`;
  let state=existsSync(journal)?JSON.parse(readFileSync(journal,'utf8')):{};
  if(t.status==='READY'&&!state.phase){writeFileSync(journal,JSON.stringify({phase:'starting'}),{mode:0o600});const started=cli(['runtime','start',t.id,...target.runtimeArgs,'--coworker-id',id]);state={phase:'started',input:started.description};writeFileSync(journal,JSON.stringify(state),{mode:0o600});}
- if(state.paid&&process.env.PAID_TASKS_ENABLED!=='true')continue;
- if(state.paid||(state.phase==='started'&&process.env.PAID_TASKS_ENABLED==='true'&&isPaidReady())){state=await paid.advance(t,state);if(state.phase==='completed')await reply(t);continue;}
+ if(state.paid&&!paidTasks)continue;
+ if(state.paid||(state.phase==='started'&&paidTasks&&isPaidReady())){state=await paid.advance(t,state);if(state.phase==='completed')await reply(t);continue;}
  if(state.phase==='started'){
  writeFileSync(journal,JSON.stringify({...state,phase:'model-pending'}),{mode:0o600});
  const gatedResult=await gated(state.input,`.local/${t.id}-session.json`);const result=gatedResult.text;

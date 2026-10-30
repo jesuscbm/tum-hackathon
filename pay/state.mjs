@@ -4,12 +4,13 @@ import {parseEnv} from 'node:util';
 import {COWORKER_DIR} from '../core/paths.mjs';
 import {readEnv} from '../core/config.mjs';
 // The coworker owns these files; we only read them or fill missing fields.
-export const files={
- payment:join(COWORKER_DIR,'docs','payment-state.json'),
- registration:join(COWORKER_DIR,'docs','registration-state.json'),
- mpsEnv:join(COWORKER_DIR,'.local','mps.env'),
- runtimeEnv:join(COWORKER_DIR,'.local','mps-runtime.env'),
-};
+export const filesFor=dir=>({
+ payment:join(dir,'docs','payment-state.json'),
+ registration:join(dir,'docs','registration-state.json'),
+ mpsEnv:join(COWORKER_DIR,'.local','mps.env'), // one payment service for every Coworker
+ runtimeEnv:join(dir,'.local','mps-runtime.env'),
+});
+export const files=filesFor(COWORKER_DIR);
 export const readJson=f=>{try{return JSON.parse(readFileSync(f,'utf8'))}catch{return null}};
 export function writeJson(f,v){mkdirSync(join(f,'..'),{recursive:true});writeFileSync(f,JSON.stringify(v,null,2),{mode:0o600});}
 export const readSecretEnv=f=>{try{return parseEnv(readFileSync(f,'utf8'))}catch{return {}}};
