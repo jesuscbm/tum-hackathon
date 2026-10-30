@@ -1,4 +1,111 @@
-# TUM Blockchain & AI Hackathon quickstart
+# TenderLens: TUM Blockchain & AI Hackathon worker
+
+TenderLens is a Sokosumi Coworker template for paid tender market analysis. A buyer submits a tender brief; Masumi locks the buyer's funds on Cardano Preprod; the worker produces a bid/no-bid and market-positioning report; and the result hash is submitted before the escrow unlock time.
+
+Use [`agent/tender-brief-template.md`](agent/tender-brief-template.md) as the buyer's task description. The paid agent API exposes this as a **Tender market-analysis brief** input schema.
+
+> This repository is a worker template. It does not create buyer wallets or transfer funds automatically. The buyer's own Masumi-compatible payment flow locks the funds, and the worker only starts after the escrow state is confirmed.
+
+## TenderLens quickstart
+
+Sokosumi connects buyers to your worker; it does **not** host the worker. Keep `npm start` and `npm run worker` running locally for a private test, or deploy the same processes to your own cloud host for a public service.
+
+### 1. Configure and start the model agent
+
+Use Node.js 24 and install the pinned dependencies:
+
+```powershell
+npm ci
+Copy-Item .env.example .env
+```
+
+Configure an OpenAI-compatible model connection in `.env`. For Hugging Face Inference Providers, use literal values (do not use `$MODEL_GATEWAY_URL` or variable substitution inside `.env`):
+
+```env
+ZAI_API_KEY=hf_your_token
+ZAI_BASE_URL=https://router.huggingface.co/v1
+ZAI_MODEL=openai/gpt-oss-120b:fastest
+ZAI_CONTEXT_WINDOW_TOKENS=32768
+PAID_TASKS_ENABLED=false
+```
+
+Start the agent and leave it running:
+
+```powershell
+npm start
+```
+
+### 2. Connect a private Sokosumi Coworker
+
+In a separate terminal, authenticate with your own Preprod account, then discover existing resources before creating new ones:
+
+```powershell
+sokosumi --preprod auth login
+sokosumi --preprod auth whoami --json
+sokosumi --preprod workspaces list --personal --json
+sokosumi --preprod vendors me --json
+sokosumi --preprod coworkers list --scope owned --json
+```
+
+If you do not have a suitable Vendor and Coworker, create them in Sokosumi using your own account. Save their returned IDs locally, then connect the Coworker to your Personal Workspace and import its runtime credential into the CLI vault:
+
+```powershell
+sokosumi --preprod coworkers connect YOUR_COWORKER_ID --personal --vendor-id YOUR_VENDOR_ID --json
+sokosumi --preprod coworkers api-key YOUR_COWORKER_ID --json |
+  sokosumi --preprod runtime key-import --coworker-id YOUR_COWORKER_ID --api-key-stdin
+```
+
+Add the Coworker ID to `.env`:
+
+```env
+COWORKER_ID=your-coworker-id
+```
+
+Start exactly one worker in another terminal:
+
+```powershell
+npm run worker
+```
+
+Create a small execution-only task before enabling payment:
+
+```powershell
+sokosumi --preprod tasks create --personal --coworker-id YOUR_COWORKER_ID `
+  --description "Tender title: Municipal IT services. Scope: give a bid/no-bid recommendation using only this supplied brief." `
+  --status READY --json
+```
+
+Record the returned Task ID and verify that its status becomes `COMPLETED` in Sokosumi.
+
+### 3. Enable Cardano Preprod escrow
+
+Only enable this after the execution-only task succeeds. Run your own [Masumi Payment Service](https://github.com/masumi-network/masumi-payment-service) with a dedicated Preprod database, encryption key, selling wallet, test ADA, and Blockfrost Preprod key. Keep its private values in `.local/mps.env`, never in Git or chat.
+
+Set `MPS_URL`, `AGENT_API_PORT`, `AGENT_AUTHOR`, and `BLOCKFROST_API_KEY_PREPROD` in `.env`. `AGENT_AUTHOR` must be your team or participant name. Then create and register the paid-agent runtime key:
+
+```powershell
+node --env-file=.env --env-file=.local/mps.env payment-registration.mjs key
+node --env-file=.env --env-file=.local/mps.env payment-registration.mjs register
+node --env-file=.env --env-file=.local/mps.env payment-registration.mjs
+```
+
+After registration is confirmed and `docs/registration-state.json` contains the returned identifiers, run:
+
+```powershell
+npm run api
+```
+
+Set `PAID_TASKS_ENABLED=true`, restart the worker, and perform one paid Preprod task. Save the completed Task ID, result, and confirmed seller receipt transaction hash as submission evidence.
+
+### 4. Make the worker reachable and request marketplace listing
+
+`npm run api` binds to `127.0.0.1`, so it is private by default. A marketplace listing needs a stable public **HTTPS** MIP-003 endpoint. For a demo, expose it with a secure tunnel; for a persistent listing, deploy it on your own server behind HTTPS.
+
+After the paid flow works, submit the TenderLens listing with its public endpoint, capabilities, pricing, example output, Terms of Service, and Privacy Policy through the Sokosumi marketplace submission process. Listing is a review/submission step, not an automatic deployment from the Sokosumi account.
+
+---
+
+# Original quickstart setup
 
 Start with the [TUM hackathon setup guide](https://www.masumi.network/tum-hackathon).
 It covers your account, Coworker, first task, and payment checkpoints.
