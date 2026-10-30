@@ -16,7 +16,7 @@ import {check} from '../checks/index.mjs';
 import {verifyResult} from '../provenance.mjs';
 // The only interface the TUI uses. Mirrors core/mock.mjs.
 export const STEPS=[machine,job,sokosumi,pay,live];
-const running=new Set();
+const running=new Set(),errors={};
 // Values a user may pass as environment variables instead of typing them in the UI (CI, servers).
 const PASSTHROUGH=['BLOCKFROST_API_KEY_PREPROD','AGENT_AUTHOR'];
 export function createCore(){
@@ -24,12 +24,12 @@ export function createCore(){
  const env=existsSync(ENV_FILE())?readEnv():{};
  const fromProcess=Object.fromEntries(PASSTHROUGH.filter(k=>process.env[k]&&!env[k]).map(k=>[k,process.env[k]]));
  if(!existsSync(ENV_FILE())||Object.keys(fromProcess).length)writeEnv(fromProcess);
- async function status(id){const m=STEPS.find(s=>s.id===id);try{const s=await m.status();return running.has(id)?{...s,status:'running'}:s}catch(e){return {id,title:m.title,status:'fail',items:[],error:e.message}}}
+ async function status(id){const m=STEPS.find(s=>s.id===id);try{const s=await m.status();return running.has(id)?{...s,status:'running'}:errors[id]&&s.status!=='ok'?{...s,status:'fail',error:errors[id]}:s}catch(e){return {id,title:m.title,status:'fail',items:[],error:e.message}}}
  async function runStep(id,opts){
   const m=STEPS.find(s=>s.id===id);if(running.has(id))return;
-  running.add(id);bus.emit('step',{id,status:'running'});
+  running.add(id);delete errors[id];bus.emit('step',{id,status:'running'});
   try{const s=await m.run(opts);running.delete(id);bus.emit('step',{id,status:s.status});return s}
-  catch(e){running.delete(id);log(id,e.message,'error');bus.emit('step',{id,status:'fail',error:e.message});return {id,status:'fail',error:e.message}}
+  catch(e){running.delete(id);errors[id]=e.message;log(id,e.message,'error');bus.emit('step',{id,status:'fail',error:e.message});return {id,status:'fail',error:e.message}}
  }
  return {
   mock:false,bus,recentLogs,

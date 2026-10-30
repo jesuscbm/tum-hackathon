@@ -1,4 +1,4 @@
-# Runbook: what lokal automates, by hand
+# Runbook: what lokAl automates, by hand
 
 Every command that worked during setup goes here; `core/steps/` and `pay/` are built from it.
 All Sokosumi commands use the pinned CLI 1.0.4 and `--preprod`.

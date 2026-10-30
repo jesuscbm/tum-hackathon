@@ -1,6 +1,6 @@
-# Verifying a lokal result
+# Verifying a lokAl result
 
-Every paid lokal job ends with one piece of text: the **canonical result**. The agent posts it
+Every paid lokAl job ends with one piece of text: the **canonical result**. The agent posts it
 as the result of the Sokosumi task. Its SHA-256 is the `resultHash` that the agent submits to the
 Masumi escrow on Cardano preprod. Anyone holding the text can check that it matches what
 went on-chain.
@@ -18,7 +18,7 @@ went on-chain.
 - `digest` fingerprints the model weights:
   - **Ollama:** the model's manifest digest, as shown by `ollama list` / `GET /api/tags`. It
     identifies the exact weights and quantization.
-  - **llama.cpp:** lokal computes the sha256 of the GGUF file it downloaded.
+  - **llama.cpp:** lokAl computes the sha256 of the GGUF file it downloaded.
   - `null` when the backend is a remote endpoint, which can't prove its weights. The TUI marks
     these as *model unverified*.
 - `promptHash` is `sha256:` + the SHA-256 of the system prompt the agent used. If the seller
@@ -39,7 +39,7 @@ went on-chain.
 node bin/lokal.mjs verify result.json <expected-hash>
 ```
 
-If you don't have lokal installed, plain Node is enough:
+If you don't have lokAl installed, plain Node is enough:
 
 ```sh
 node -e "const t=require('fs').readFileSync(process.argv[1],'utf8');console.log(require('crypto').createHash('sha256').update(t,'utf8').digest('hex'))" result.json
@@ -52,7 +52,7 @@ form, which catches a reformatted copy that happens to contain the same data.
 
 To check the model too, run `ollama pull <model>` and compare `ollama list`'s digest with
 `digest`. To check the prompt, hash the published `prompt.md`:
-`sha256sum templates/invoice-json/prompt.md`. Note that lokal hashes the exact text it loaded.
+`sha256sum templates/invoice-json/prompt.md`. Note that lokAl hashes the exact text it loaded.
 
 ## What the check proves, and what it does not
 

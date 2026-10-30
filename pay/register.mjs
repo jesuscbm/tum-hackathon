@@ -1,6 +1,7 @@
 import {run} from '../core/exec.mjs';
 import {COWORKER_DIR} from '../core/paths.mjs';
 import {files,readJson,writeJson,exists} from './state.mjs';
+import {health} from './mps.mjs';
 // Wraps coworker/payment-registration.mjs (key → register → poll) and fills the fields the worker needs.
 const node=args=>run(process.execPath,['--env-file-if-exists=.env','--env-file-if-exists=.local/mps.env','payment-registration.mjs',...args],{cwd:COWORKER_DIR,source:'registry',timeout:120000});
 export function status(){
@@ -13,6 +14,8 @@ async function step(args){const r=await node(args);if(r.code!==0)throw new Error
 export async function ensureKey(){if(!exists(files.runtimeEnv))await step(['key']);}
 export async function register(){await ensureKey();const s=readJson(files.registration);if(!s?.registrationId)await step(['register']);return poll();}
 export async function poll(){
+ // The script crashes with ECONNREFUSED while the payment service is down or still booting.
+ if(!(await health()))return status();
  await step([]);
  const s=readJson(files.registration);
  if(s?.registrationState==='RegistrationConfirmed'||s?.registration?.state==='RegistrationConfirmed'){

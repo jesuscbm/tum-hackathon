@@ -22,7 +22,7 @@ preprod explorer demo. Crowded examples to avoid: paid research task, paid data 
 Repo + exact run commands; a completed Task and a follow-up reply; payment evidence = Task ID + payment tx hash +
 seller's net receipt kept together; separate what works from what is pending; public/sample data only.
 
-## How lokal answers the brief
+## How lokAl answers the brief
 Customer: anyone with spare compute who wants to sell agent work without a cloud API. Demo job: invoice → JSON.
 Payment tied to the result: the check gates submit-result. Provenance: result hash commits to weights + prompt.
 Pitch number: time from the install command to the first paid job on a fresh laptop.

@@ -3,7 +3,7 @@
 Adapted from the Masumi TUM starter.
 
 This folder is [`masumi-network/tum-hackathon-quickstart`](https://github.com/masumi-network/tum-hackathon-quickstart)
-with small, tested hooks for lokal. **Use lokal from the repository root** (`node bin/lokal.mjs`); it writes this
+with small, tested hooks for lokal. **Use lokAl from the repository root** (`node bin/lokal.mjs`); it writes this
 folder's `.env` and `agent/instructions.md`, and starts these processes for you.
 
 | Process | Command | Role |
@@ -14,7 +14,7 @@ folder's `.env` and `agent/instructions.md`, and starts these processes for you.
 
 Run only **one worker per Coworker**.
 
-## lokal changes to the starter
+## lokAl changes to the starter
 - `lokal-gate.mjs` (+ test): runs the job template's check, retries once with the reasons, and turns the answer into
   a canonical JSON result (output, model, weights digest, prompt hash, check). Active only when `LOKAL_TEMPLATE` is set.
 - `worker.mjs`: answers go through the gate.

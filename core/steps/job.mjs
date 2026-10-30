@@ -22,7 +22,7 @@ export async function select(templateId){
  const f=INSTR();
  if(existsSync(f)){const cur=readFileSync(f,'utf8');if(cur!==t.prompt&&!existsSync(f+'.before-lokal')){copyFileSync(f,f+'.before-lokal');log('job','Saved previous agent instructions to agent/instructions.md.before-lokal');}}
  writeFileSync(f,t.prompt);
- writeEnv({LOKAL_TEMPLATE:t.id,LOKAL_AGENT_NAME:`${t.name} (lokal)`,LOKAL_AGENT_DESCRIPTION:t.description??''});
+ writeEnv({LOKAL_TEMPLATE:t.id,LOKAL_AGENT_NAME:`${t.name} (lokAl)`,LOKAL_AGENT_DESCRIPTION:t.description??''});
  saveConfig({template:t.id});
  return status();
 }

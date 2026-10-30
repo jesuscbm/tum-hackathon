@@ -1,23 +1,25 @@
 import {existsSync,mkdirSync,writeFileSync} from 'node:fs';
 import {join,dirname,delimiter} from 'node:path';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,createHash} from 'node:crypto';
 import {HOME} from '../core/paths.mjs';
 import {run,which} from '../core/exec.mjs';
 import {log,progress} from '../core/events.mjs';
 import {readEnv} from '../core/config.mjs';
+import {node24Bin} from '../core/node24.mjs';
 import {files,mpsUrl,mps,readJson,writeJson,readSecretEnv} from './state.mjs';
 // Masumi Payment Service: our own instance, own Postgres (docker), own wallets. Idempotent phases:
 //   A (no secrets needed): Postgres, source, pnpm install, migrate
 //   B (needs the Blockfrost preprod key): seed wallets + payment source
 export const MPS_DIR=join(HOME,'masumi-payment-service');
-const DB_NAME='lokal-mps-db',DB_PORT=55432;
+const DB_NAME=process.env.LOKAL_DB_CONTAINER||'lokal-mps-db',DB_PORT=55432;
 const PNPM_VERSION='10.30.2'; // the service's packageManager field
 // Pinned commit (tested 2026-10-30). Override with LOKAL_MPS_REF to try a newer one.
 const MPS_REF=process.env.LOKAL_MPS_REF||'a846392ccfc8f5a85aee594ad9441dc90820dab0';
 const GLOBAL=join(HOME,'npm-global');
-// Child processes use the Node lokal runs on (the installer's private Node 24) and our private pnpm.
-export function toolEnv(){return {PATH:[dirname(process.execPath),join(GLOBAL,'bin'),process.env.PATH].join(delimiter),NPM_CONFIG_UPDATE_NOTIFIER:'false',CI:'true'};}
-const sh=(cmd,args,opts={})=>run(cmd,args,{source:'mps',env:toolEnv(),...opts});
+// Everything for the service runs on Node 24.22.x (see core/node24.mjs) with our private pnpm first on PATH.
+let nodeDir=null;
+export async function toolEnv(){nodeDir??=await node24Bin();return {PATH:[nodeDir,join(GLOBAL,'bin'),process.env.PATH].join(delimiter),NPM_CONFIG_UPDATE_NOTIFIER:'false',CI:'true'};}
+const sh=async(cmd,args,opts={})=>run(cmd,args,{source:'mps',env:await toolEnv(),...opts});
 export async function health(){
  try{const r=await fetch(mpsUrl()+'/api/v1/health',{signal:AbortSignal.timeout(3000)});return r.ok}catch{return false}
 }
@@ -30,17 +32,19 @@ async function ensurePnpm(){
  const v=await sh('pnpm',['--version'],{quiet:true,timeout:20000});
  if(v.code===0&&v.stdout.trim()===PNPM_VERSION)return;
  progress('mps',`Installing pnpm ${PNPM_VERSION} (private)`,0.3);
- await must(await sh(join(dirname(process.execPath),'npm'),['install','--global','--prefix',GLOBAL,`pnpm@${PNPM_VERSION}`,'--no-audit','--no-fund'],{timeout:300000}),'pnpm install');
+ await must(await sh('npm',['install','--global','--prefix',GLOBAL,`pnpm@${PNPM_VERSION}`,'--no-audit','--no-fund'],{timeout:300000}),'pnpm install');
 }
 function secrets(){
  const s=readSecretEnv(files.mpsEnv);
- const next={ADMIN_KEY:s.ADMIN_KEY||randomBytes(24).toString('hex'),LOKAL_DB_PASSWORD:s.LOKAL_DB_PASSWORD||randomBytes(18).toString('hex'),LOKAL_ENCRYPTION_KEY:s.LOKAL_ENCRYPTION_KEY||randomBytes(24).toString('hex'),LOKAL_PREPARED:s.LOKAL_PREPARED||'0',LOKAL_SEEDED:s.LOKAL_SEEDED||'0'};
+ const next={...s,ADMIN_KEY:s.ADMIN_KEY||randomBytes(24).toString('hex'),LOKAL_DB_PASSWORD:s.LOKAL_DB_PASSWORD||randomBytes(18).toString('hex'),LOKAL_ENCRYPTION_KEY:s.LOKAL_ENCRYPTION_KEY||randomBytes(24).toString('hex'),LOKAL_PREPARED:s.LOKAL_PREPARED||'0',LOKAL_SEEDED:s.LOKAL_SEEDED||'0'};
  return next;
 }
 function saveSecrets(s){mkdirSync(dirname(files.mpsEnv),{recursive:true,mode:0o700});writeFileSync(files.mpsEnv,Object.entries(s).map(([k,v])=>`${k}=${v}`).join('\n')+'\n',{mode:0o600});}
 function writeServiceEnv(s){
  const env=readEnv();
- writeFileSync(join(MPS_DIR,'.env'),[`DATABASE_URL="postgresql://masumi:${s.LOKAL_DB_PASSWORD}@127.0.0.1:${DB_PORT}/masumi?schema=public"`,`ENCRYPTION_KEY="${s.LOKAL_ENCRYPTION_KEY}"`,`ADMIN_KEY="${s.ADMIN_KEY}"`,`PORT="${env.MPS_PORT||'38127'}"`,`BLOCKFROST_API_KEY_PREPROD="${env.BLOCKFROST_API_KEY_PREPROD||''}"`,'SEED_ONLY_IF_EMPTY=True','OTEL_EXPORTER_OTLP_ENDPOINT=""',''].join('\n'),{mode:0o600});
+ writeFileSync(join(MPS_DIR,'.env'),[`DATABASE_URL="postgresql://masumi:${s.LOKAL_DB_PASSWORD}@127.0.0.1:${DB_PORT}/masumi?schema=public"`,`ENCRYPTION_KEY="${s.LOKAL_ENCRYPTION_KEY}"`,`ADMIN_KEY="${s.ADMIN_KEY}"`,`PORT="${env.MPS_PORT||'38127'}"`,`BLOCKFROST_API_KEY_PREPROD="${env.BLOCKFROST_API_KEY_PREPROD||''}"`,'SEED_ONLY_IF_EMPTY=True',
+  // Default is 300 s: after a restart the old sync lock would block registration for 5 minutes.
+  'SYNC_LOCK_TIMEOUT_INTERVAL="30"','OTEL_EXPORTER_OTLP_ENDPOINT=""',''].join('\n'),{mode:0o600});
 }
 async function waitForDb(s){
  for(let i=0;i<30;i++){const r=await run('docker',['exec',DB_NAME,'pg_isready','-U','masumi'],{quiet:true,timeout:10000});if(r.code===0)return;await new Promise(r=>setTimeout(r,1000));}
@@ -90,16 +94,53 @@ export async function seed(){
  return status();
 }
 export async function setup(){const st=await status();if(!st.prepared)await prepare();if(readEnv().BLOCKFROST_API_KEY_PREPROD&&!(await status()).installed)await seed();return status();}
+// Called right before lokal starts the (single) service: a lock left by a killed instance would block
+// registration and payments until it times out, and nobody else can be holding it.
+export async function clearStaleLocks(){
+ const sql='UPDATE "PaymentSource" SET "syncInProgress"=false WHERE "syncInProgress"=true; UPDATE "HotWallet" SET "lockedAt"=NULL WHERE "lockedAt" IS NOT NULL AND "pendingTransactionId" IS NULL;';
+ const r=await run('docker',['exec',DB_NAME,'psql','-U','masumi','-d','masumi','-qAt','-c',sql],{quiet:true,timeout:20000});
+ if(r.code!==0)log('mps','Could not clear stale locks: '+r.stderr.trim().slice(0,160),'error');
+}
 // Command the supervisor runs to keep the service up.
-export function command(){return {cmd:'pnpm',args:['run','dev'],cwd:MPS_DIR,env:toolEnv()};}
+// Plain tsx, not the `dev` script's `tsx watch`: watch mode restarts the service (and drops its locks) on file changes.
+export async function command(){if(existsSync(MPS_DIR))writeServiceEnv(secrets());return {cmd:'pnpm',args:['exec','tsx','./src/index.ts'],cwd:MPS_DIR,env:await toolEnv()};}
+// A new payment source would replay the shared escrow contract's whole history (every team's txs, ~30 min on a
+// free Blockfrost key) before it registers anything. Our wallets are new, so none of it concerns us: start the
+// sync checkpoint at the contract's newest tx instead. Runs only while the service is stopped.
+export async function skipContractHistory(){
+ const psql=sql=>run('docker',['exec',DB_NAME,'psql','-U','masumi','-d','masumi','-qAt','-F','|','-c',sql],{quiet:true,timeout:20000});
+ const q=await psql(`SELECT id,"smartContractAddress" FROM "PaymentSource" WHERE network='Preprod' AND "lastIdentifierChecked" IS NULL AND "deletedAt" IS NULL`);
+ const key=readEnv().BLOCKFROST_API_KEY_PREPROD;
+ for(const line of q.stdout.trim().split('\n').filter(Boolean)){
+  const [id,address]=line.split('|');
+  if(!key||!address)continue;
+  const r=await fetch(`https://cardano-preprod.blockfrost.io/api/v0/addresses/${address}/transactions?order=desc&count=1`,{headers:{project_id:key},signal:AbortSignal.timeout(15000)});
+  if(!r.ok){log('mps',`Could not read the contract's latest tx (Blockfrost HTTP ${r.status}); the first sync will take a while`,'error');continue;}
+  const hash=(await r.json())[0]?.tx_hash;if(!hash||!/^[0-9a-f]{64}$/.test(hash))continue;
+  await psql(`UPDATE "PaymentSource" SET "lastIdentifierChecked"='${hash}' WHERE id='${id.replace(/'/g,'')}' AND "lastIdentifierChecked" IS NULL`);
+  log('mps',`Skipping the escrow contract's history: sync starts at ${hash.slice(0,12)}…`);
+ }
+}
+// The seed copies the Blockfrost key into the payment source; push a changed key there too.
+export async function syncBlockfrostKey(){
+ const key=readEnv().BLOCKFROST_API_KEY_PREPROD;if(!key)return false;
+ const h=createHash('sha256').update(key).digest('hex').slice(0,16);
+ const s=secrets();if(s.LOKAL_BF_SYNCED===h)return false;
+ const src=((await mps('/payment-source-extended?take=100')).ExtendedPaymentSources??[]).find(x=>x.network==='Preprod'&&x.paymentSourceType==='Web3CardanoV2');
+ if(!src)return false;
+ await mps('/payment-source-extended',{method:'PATCH',body:{id:src.id,PaymentSourceConfig:{rpcProviderApiKey:key,rpcProvider:'Blockfrost'}}});
+ saveSecrets({...secrets(),LOKAL_BF_SYNCED:h});log('pay','Blockfrost key updated in the payment service');
+ return true;
+}
 // After the service is up: record our Preprod V2 source + selling wallet for the coworker.
 export async function recordPaymentState(){
  const existing=readJson(files.payment);if(existing?.sourceId&&existing?.walletId&&existing?.sellerAddress)return existing;
- const data=await mps('/payment-source?take=100');
- const list=data.PaymentSources??data.paymentSources??data.ExtendedPaymentSources??(Array.isArray(data)?data:[]);
- const src=list.find(s=>s.network==='Preprod'&&(s.paymentSourceType==='Web3CardanoV2'||!s.paymentSourceType));
+ // Shapes checked against MPS a846392: sources list their wallet counts only; wallets come from /wallet/list.
+ const data=await mps('/payment-source-extended?take=100');
+ const src=(data.ExtendedPaymentSources??[]).find(s=>s.network==='Preprod'&&s.paymentSourceType==='Web3CardanoV2');
  if(!src)throw new Error('No Preprod V2 payment source found in the payment service');
- const sw=(src.SellingWallets??[])[0];if(!sw)throw new Error('Payment source has no selling wallet');
+ const wallets=(await mps(`/wallet/list?walletType=Selling&paymentSourceId=${encodeURIComponent(src.id)}&take=10`)).Wallets??[];
+ const sw=wallets[0];if(!sw)throw new Error('Payment source has no selling wallet');
  const state={sourceId:src.id,walletId:sw.id,sellerAddress:sw.walletAddress};
  writeJson(files.payment,state);log('pay',`Selling wallet ${sw.walletAddress}`);
  return state;

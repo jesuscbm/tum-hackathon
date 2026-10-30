@@ -6,7 +6,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 echo "== install into $T"
-HOME="$T" LOKAL_SRC="$ROOT" sh "$ROOT/install.sh"
+HOME="$T" LOKAL_SRC="$ROOT" LOKAL_NO_START=1 sh "$ROOT/install.sh"
 L="$T/.local/bin/lokal"
 echo "== lokal --help";        HOME="$T" "$L" --help >/dev/null
 echo "== lokal status --mock"; HOME="$T" "$L" status --mock | grep -q "Your machine & model"
@@ -18,4 +18,10 @@ echo "== unit tests with the installed Node"
 APP="$T/.local/share/lokal/app"
 NODE=$(sed -n 's/^exec "\([^"]*\)".*/\1/p' "$L")
 (cd "$APP" && "$NODE" --test test/*.test.mjs >/dev/null)
+echo "== uninstall"
+echo 'export FOO=1' > "$T/.bashrc"
+HOME="$T" LOKAL_DB_CONTAINER=lokal-smoke-none sh "$ROOT/uninstall.sh" >/dev/null
+[ ! -e "$T/.local/share/lokal" ] && [ ! -e "$L" ] || { echo "uninstall left files behind"; exit 1; }
+! grep -q 'added by lokal' "$T/.profile" "$T/.bashrc" 2>/dev/null || { echo "uninstall left PATH lines"; exit 1; }
+grep -q 'export FOO=1' "$T/.bashrc" || { echo "uninstall damaged .bashrc"; exit 1; }
 echo "smoke OK"

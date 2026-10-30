@@ -1,6 +1,8 @@
-# lokal
+# lokAl
 
 **Your local LLM, hired and paid on Cardano, set up from one terminal.**
+
+*The project is **lokAl**; the command you type is `lokal` (all lowercase).*
 
 Start with nothing, or with a model you already run. `lokal` installs the model runtime
 (Ollama or llama.cpp), downloads a model that fits your machine, and turns it into a paid agent on
@@ -30,15 +32,15 @@ manual steps today:
 
 Each step has its own gotchas, and most people give up at the payment step.
 
-## What lokal does
+## What lokAl does
 
 One command installs lokal. Typing `lokal` opens a terminal UI that walks you through five steps:
 
 | # | Step | What happens |
 |---|---|---|
-| 1 | **Your machine & model** | Detects OS, CPU, RAM, GPU and any model server already running. If none is found, **installs one for you**: Ollama by default, or llama.cpp's `llama-server`. Both use prebuilt binaries in `~/.local/share/lokal/`, with no sudo. Recommends a model that fits your hardware (for example Llama 3.2 3B on a laptop CPU, or Llama 3.1 8B with 8 GB+ VRAM), downloads it with a live progress bar, starts the server, and runs a test prompt. You can also point lokal at an existing OpenAI-compatible endpoint (LM Studio, vLLM, a cloud key). |
+| 1 | **Your machine & model** | Detects OS, CPU, RAM, GPU and any model server already running. If none is found, **installs one for you**: Ollama by default, or llama.cpp's `llama-server`. Both use prebuilt binaries in `~/.local/share/lokal/`, with no sudo. Recommends a model that fits your hardware (for example Llama 3.2 3B on a laptop CPU, or Llama 3.1 8B with 8 GB+ VRAM), downloads it with a live progress bar, starts the server, and runs a test prompt. You can also point lokAl at an existing OpenAI-compatible endpoint (LM Studio, vLLM, a cloud key). |
 | 2 | **Pick a job** | Choose a job template, or write your own system prompt in `$EDITOR`. Paste a sample input to try the model live and see the check pass or fail. |
-| 3 | **Connect Sokosumi** | Creates the Vendor and Coworker, connects the workspace and imports the runtime key. Any step that needs a human (one login) is shown as one command, and lokal detects when it is done. |
+| 3 | **Connect Sokosumi** | Creates the Vendor and Coworker, connects the workspace and imports the runtime key. Any step that needs a human (one login) is shown as one command, and lokAl detects when it is done. |
 | 4 | **Get paid** | Sets up the payment service and selling wallet, shows the wallet address as a QR code, tracks the balance live, and registers the agent with an explorer link. |
 | 5 | **You're live** | Sends you a test job. The job card moves through escrow locked → answered → check passed → paid, with transaction links. |
 
@@ -69,7 +71,7 @@ The result that gets hashed is a canonical JSON object:
 
 That hash is what goes on-chain as Masumi's `resultHash`. A buyer can recompute it and confirm
 which exact weights (the Ollama model digest) and which system prompt produced the answer.
-For Ollama the digest comes from the model manifest. For llama.cpp, lokal computes the sha256
+For Ollama the digest comes from the model manifest. For llama.cpp, lokAl computes the sha256
 of the GGUF file it downloaded. Remote or third-party endpoints don't expose their weights,
 so they are marked *model unverified*.
 See [`docs/verify.md`](docs/verify.md).
@@ -110,7 +112,8 @@ Sample inputs, both passing and failing, live in `templates/invoice-json/samples
 
 ```
 .
-├── install.sh                 # one-line installer: private Node 24, deps, Sokosumi CLI, `lokal` command
+├── install.sh                 # one-line installer: private Node 24, deps, Sokosumi CLI, PATH, starts the wizard
+├── uninstall.sh               # removes everything lokal installed (flags: --models --logout --all)
 ├── bin/
 │   └── lokal.mjs              # CLI entry: TUI (default), status, doctor, verify, uninstall, --mock
 ├── tui/                       # Ink (React for terminals), no build step: components via htm
@@ -169,35 +172,45 @@ Sample inputs, both passing and failing, live in `templates/invoice-json/samples
   brings its own private copy.
 - A system credential vault supported by the Sokosumi CLI (GNOME Keyring / KWallet on Linux,
   Keychain on macOS)
-- Nothing else for the model: lokal installs [Ollama](https://ollama.com) or
+- Nothing else for the model: lokAl installs [Ollama](https://ollama.com) or
   [llama.cpp](https://github.com/ggml-org/llama.cpp) if no model server is found.
   Plan for 2–5 GB of disk per model.
-- Docker, only for step 4. The Masumi Payment Service needs its own Postgres database, and lokal
+- Docker, only for step 4. The Masumi Payment Service needs its own Postgres database, and lokAl
   starts it in a container. If Docker is missing, the TUI shows the install command for your OS.
 - A Sokosumi **preprod** account and a free [Blockfrost](https://blockfrost.io) preprod key
 
 ## Install
 
+One command does the whole ride: install, then the setup wizard starts in the same terminal.
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jesuscbm/tum-hackathon/main/install.sh | sh
-lokal
+curl -fsSL https://raw.githubusercontent.com/jesuscbm/lokAl/main/install.sh | sh
 ```
 
-Then the TUI takes over. The installer:
-- doesn't need sudo and writes only to `~/.local/share/lokal/` and `~/.local/bin/lokal`;
-- uses your Node if it is 24 or newer. Otherwise it downloads a pinned Node 24 from nodejs.org
-  into `~/.local/share/lokal/node` and checks its SHA-256;
-- installs lokal's dependencies and the pinned Sokosumi CLI **1.0.4** with that private Node;
-  you never run npm yourself;
-- adds `~/.local/bin` to your `PATH` if it is missing, and tells you so.
+Afterwards, `lokal` reopens the dashboard from any new terminal. The installer:
+- needs no sudo and writes only to `~/.local/share/lokal/` and `~/.local/bin/` (plus one marked PATH line in
+  `~/.profile`, `~/.bashrc`, `~/.zshrc` when `~/.local/bin` isn't on your PATH yet);
+- uses your Node if it is 24.x, otherwise a pinned Node 24 from nodejs.org (SHA-256 verified), kept private;
+- installs lokAl's dependencies and the pinned Sokosumi CLI **1.0.4** with that Node; you never run npm yourself.
 
-You can [read the installer first](install.sh) before running it. To remove everything:
-`lokal uninstall`, or `rm -rf ~/.local/share/lokal ~/.local/bin/lokal`.
+Set `LOKAL_NO_START=1` to install without starting the wizard (CI, provisioning). [Read the installer](install.sh) first if you like.
+
+### Uninstall (and start over)
+
+```sh
+lokal uninstall            # or: curl -fsSL https://raw.githubusercontent.com/jesuscbm/lokAl/main/uninstall.sh | sh
+lokal uninstall --all      # also delete downloaded models, sign Sokosumi out, remove the postgres image
+```
+
+It stops every lokAl process, removes the payment database container, `~/.local/share/lokal`, the `lokal` command
+and the PATH lines. Online records (Sokosumi Vendor/Coworker, registry entry, preprod transactions) stay, and a
+reinstall reuses your Vendor and the Coworker lokAl registered. A reinstall creates a fresh selling wallet, which
+gets new test ADA from the dispenser automatically.
 
 ### For contributors: run from source
 
 ```sh
-git clone https://github.com/jesuscbm/tum-hackathon.git lokal && cd lokal
+git clone https://github.com/jesuscbm/lokAl.git && cd lokAl
 npm ci && (cd coworker && npm ci)
 node bin/lokal.mjs            # real setup
 node bin/lokal.mjs --mock     # fake backend: the whole flow in 30 seconds, nothing touched
@@ -205,7 +218,7 @@ node bin/lokal.mjs status     # plain-text status of every step
 npm test && (cd coworker && npm test)
 ```
 
-Point lokal at another coworker folder or state folder with `LOKAL_COWORKER_DIR` and `LOKAL_HOME`.
+Point lokAl at another coworker folder or state folder with `LOKAL_COWORKER_DIR` and `LOKAL_HOME`.
 
 ### Headless (servers, SSH, CI)
 
@@ -218,14 +231,14 @@ lokal run pay                     # payment service, wallet + test ADA, registry
 lokal up                          # keep agent, worker and agent API running; logs to stdout
 ```
 
-The commands lokal runs underneath are listed in [`docs/runbook.md`](docs/runbook.md).
+The commands lokAl runs underneath are listed in [`docs/runbook.md`](docs/runbook.md).
 
 ## Configuration
 
 **You never edit a config file.** `coworker/.env` is created from `coworker/.env.example` and filled in by
-the wizard; it is git-ignored and never leaves your machine. The only values lokal cannot find on its own:
+the wizard; it is git-ignored and never leaves your machine. The only values lokAl cannot find on its own:
 
-| Value | Where lokal asks | Headless alternative |
+| Value | Where lokAl asks | Headless alternative |
 |---|---|---|
 | Blockfrost preprod key (free, [blockfrost.io](https://blockfrost.io)) | step 4, masked input | `lokal set BLOCKFROST_API_KEY_PREPROD` (reads stdin) or the `BLOCKFROST_API_KEY_PREPROD` env var |
 | Registry author name | defaults to your Sokosumi Vendor name | `lokal set AGENT_AUTHOR` or the `AGENT_AUTHOR` env var |
@@ -253,7 +266,7 @@ The submission checklist asks us to keep what works separate from what is pendin
 - [x] Installer tested from a local checkout into an empty home (private Node 24, sha256 verified)
 - [x] `npm run smoke`: clean-room install + CLI + tests with no accounts or keys (also in CI)
 - [x] Payment service phase A for real: Postgres in Docker, pinned checkout, install, migrate
-- [ ] lokal installs Ollama on a machine without one (code written, untested)
+- [ ] lokAl installs Ollama on a machine without one (code written, untested)
 - [ ] Local model answers a free Sokosumi task through the gate (TUM workspace)
 - [ ] Payment service phase B (wallets, needs Blockfrost key), automatic test ADA, agent registered (code written, untested)
 - [ ] Paid task completed: tx hash + seller receipt in [`docs/evidence.md`](docs/evidence.md)
@@ -272,8 +285,8 @@ test USDM · `dispenser.masumi.network`.
 - The buyer refund relies on Masumi's escrow deadlines. The agent withholds a failing
   result, and the buyer reclaims the funds after the deadline.
 - The check proves the output is well-formed and internally consistent, not that it is correct.
-- The weights digest is available only for models lokal runs locally (Ollama or llama.cpp).
-- Runtime auto-install targets Linux and macOS. On Windows, install Ollama yourself and lokal detects it.
+- The weights digest is available only for models lokAl runs locally (Ollama or llama.cpp).
+- Runtime auto-install targets Linux and macOS. On Windows, install Ollama yourself and lokAl detects it.
 
 ## Team
 
