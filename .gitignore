@@ -1,0 +1,47 @@
+# Secrets: never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.skey
+*.vkey
+*seed*
+*mnemonic*
+
+# Runtime state, journals, payment and wallet data
+.local/
+.eve/
+.workflow/
+.output/
+docs/*.json
+**/docs/*.json
+
+# Dependencies and builds
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Payment service checkout and its data (run separately, own DB)
+masumi-payment-service/
+pgdata/
+postgres-data/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local AI tooling scratch
+.claude/settings.local.json
+
+# lokal backups of replaced agent instructions
+*.before-lokal

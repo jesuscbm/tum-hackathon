@@ -5,6 +5,8 @@ import {answer,client} from './client.mjs';
 import {reply} from './comments.mjs';
 import {createPaidAdapter,isPaidReady} from './paid-task.mjs';
 import {taskTarget,isTaskForTarget} from './task-target.mjs';
+import {gate} from './lokal-gate.mjs';
+const gated=gate(answer);
 const target=taskTarget();
 const id=target.coworkerId;
 const releaseLock=acquireWorkerLock();
@@ -12,7 +14,7 @@ process.once('exit',releaseLock);
 for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{releaseLock();process.exit(0)});
 function cli(args){return JSON.parse(execFileSync('sokosumi',['--preprod',...args,'--json'],{encoding:'utf8',timeout:30000,maxBuffer:4*1024*1024}));}
 await client.health();
-const paid=await createPaidAdapter({target,answer,save:async(taskId,state)=>writeFileSync(`.local/${taskId}.json`,JSON.stringify(state),{mode:0o600})});
+const paid=await createPaidAdapter({target,answer:gated,save:async(taskId,state)=>writeFileSync(`.local/${taskId}.json`,JSON.stringify(state),{mode:0o600})});
 console.log('Continuous worker running',process.pid);
 while(true){
  try{
@@ -26,8 +28,8 @@ while(true){
  if(state.paid||(state.phase==='started'&&process.env.PAID_TASKS_ENABLED==='true'&&isPaidReady())){state=await paid.advance(t,state);if(state.phase==='completed')await reply(t);continue;}
  if(state.phase==='started'){
  writeFileSync(journal,JSON.stringify({...state,phase:'model-pending'}),{mode:0o600});
- const result=await answer(state.input,`.local/${t.id}-session.json`);
- writeFileSync(resultFile,result,{mode:0o600});state={...state,phase:'result-saved'};writeFileSync(journal,JSON.stringify(state),{mode:0o600});
+ const gatedResult=await gated(state.input,`.local/${t.id}-session.json`);const result=gatedResult.text;
+ writeFileSync(resultFile,result,{mode:0o600});state={...state,check:gatedResult.check,resultHash:gatedResult.hash};state={...state,phase:'result-saved'};writeFileSync(journal,JSON.stringify(state),{mode:0o600});
  }
  if(state.phase==='result-saved'){
  writeFileSync(journal,JSON.stringify({...state,phase:'complete-pending'}),{mode:0o600});

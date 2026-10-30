@@ -13,7 +13,10 @@ export async function mps(path,body){
  const response=await fetch(process.env.MPS_URL+'/api/v1'+path,{method:body?'POST':'GET',headers:{token,'content-type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(30000)});
  const data=await response.json();if(!response.ok)throw new Error(`Payment service HTTP ${response.status}`);return data.data;
 }
-const schema={input_data:[{id:'prompt',type:'string',name:'Tender market-analysis brief',data:{description:'Provide the tender scope, buyer, geography, target market, competitors to assess (if known), and the decision you need to make.'},validations:[{validation:'min',value:'1'},{validation:'max',value:'16000'}]}]};
+import {loadTemplate} from '../templates/index.mjs';
+// lokal: the input schema describes the active job template.
+const template=(()=>{try{return loadTemplate(process.env.LOKAL_TEMPLATE||'freeform')}catch{return {name:'Request',inputLabel:'Describe what you need'}}})();
+const schema={input_data:[{id:'prompt',type:'string',name:template.name,data:{description:template.inputLabel??template.description??'Describe what you need'},validations:[{validation:'min',value:'1'},{validation:'max',value:'16000'}]}]};
 const respond=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(data))};
 const port=Number(process.env.AGENT_API_PORT||21950);
 createServer(async(req,res)=>{

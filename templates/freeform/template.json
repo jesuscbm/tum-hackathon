@@ -1,0 +1,8 @@
+{
+  "id": "freeform",
+  "name": "Freeform assistant",
+  "description": "A general helpful assistant. No check, so buyers get no pay-only-if-correct guarantee.",
+  "inputLabel": "Describe what you need",
+  "check": { "type": "none" },
+  "price": { "amount": "1000000", "unit": "USDM", "display": "1 USDM" }
+}

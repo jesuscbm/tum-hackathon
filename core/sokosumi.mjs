@@ -1,0 +1,47 @@
+import {spawn} from 'node:child_process';
+import {json,run,which} from './exec.mjs';
+import {log} from './events.mjs';
+// Thin wrapper over the pinned Sokosumi CLI (Preprod). Secrets never touch our logs.
+export const CLI_VERSION='1.0.4';
+const cli=(args,opts={})=>json('sokosumi',['--preprod',...args,'--json'],{source:'sokosumi',quiet:true,timeout:60000,...opts});
+export async function installed(){
+ if(!await which('sokosumi'))return {installed:false};
+ const r=await run('sokosumi',['--version'],{quiet:true,timeout:10000});
+ const version=r.stdout.trim().match(/\d+\.\d+\.\d+/)?.[0]??null;
+ return {installed:true,version,pinned:version===CLI_VERSION};
+}
+export async function whoami(){const r=await cli(['auth','whoami']);return r.ok?r.data.user:null;}
+// Opens the browser OAuth flow in the background; the caller polls whoami().
+export function login(){
+ const child=spawn('sokosumi',['--preprod','auth','login'],{detached:true,stdio:'ignore'});
+ child.on('error',()=>{});child.unref();log('sokosumi','Opened Sokosumi login in your browser');
+}
+export async function vendor(){const r=await cli(['vendors','me']);const v=r.data?.vendors??r.data?.vendor??r.data;return Array.isArray(v)?v[0]??null:v??null;}
+export async function createVendor(name,slug){const r=await cli(['vendors','create','--name',name,'--slug',slug]);if(!r.ok)throw new Error(firstLine(r));return r.data.vendor??r.data;}
+export async function ownedCoworkers(){const r=await cli(['coworkers','list','--scope','owned']);return r.data?.coworkers??[];}
+export async function registerCoworker({vendorId,name,description}){
+ const r=await cli(['coworkers','register','--personal','--vendor-id',vendorId,'--name',name,'--description',description,'--capability','tasks']);
+ if(!r.ok)throw new Error(firstLine(r));return r.data.coworker??r.data;
+}
+// api-key → key-import over stdin; the token only lives in this process's memory.
+export async function importRuntimeKey(coworkerId){
+ const k=await cli(['coworkers','api-key',coworkerId]);
+ const token=k.data?.apiKey?.token;if(!k.ok||typeof token!=='string')throw new Error('Could not create the Coworker runtime key: '+firstLine(k));
+ const r=await run('sokosumi',['--preprod','runtime','key-import','--coworker-id',coworkerId,'--api-key-stdin','--json'],{input:token+'\n',quiet:true,timeout:60000});
+ if(r.code!==0)throw new Error('Key import failed: '+firstLine(r));
+ return true;
+}
+export async function connectWorkspace({coworkerId,vendorId,organizationId}){
+ const r=await cli(['coworkers','connect',coworkerId,'--vendor-id',vendorId,'--workspace-id',organizationId]);
+ if(!r.ok)throw new Error(firstLine(r));
+ const c=await cli(['workspaces','check',organizationId]);
+ return {connect:r.data,check:c.data};
+}
+export async function workspaces(){const r=await cli(['workspaces','list']);return r.data?.workspaces??r.data?.organizations??[];}
+export async function createTask({coworkerId,name,description,organizationSlug}){
+ const where=organizationSlug?['--organization-slug',organizationSlug]:['--personal'];
+ const r=await cli(['tasks','create',...where,'--coworker-id',coworkerId,'--name',name,'--description',description,'--status','READY']);
+ if(!r.ok)throw new Error(firstLine(r));return r.data.task??r.data;
+}
+export async function getTask(id,organizationSlug){const r=await cli(['tasks','get',id,...(organizationSlug?['--organization-slug',organizationSlug]:[])]);return r.ok?(r.data.task??r.data):null;}
+function firstLine(r){return ((r.stderr||r.stdout||'').trim().split('\n').find(l=>l.trim())||`exit ${r.code}`).slice(0,240);}

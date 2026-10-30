@@ -1,0 +1,18 @@
+INVOICE
+
+From: Lena Hofmann — UX Research & Design
+To:   Northwind Mobility GmbH
+Invoice number: LH-2026-031
+Invoice date: 15 October 2026
+Currency: EUR
+
+Services
+- User interviews (8 sessions)        8 x 120.00 =   960.00
+- Usability test report               1 x 650.00 =   650.00
+- Prototype iteration (hours)        12 x  75.00 =   900.00
+
+Net amount:      2,510.00
+VAT 19%:           476.90
+Total payable:   2,986.90
+
+Please transfer within 14 days.

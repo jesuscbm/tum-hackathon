@@ -79,9 +79,16 @@ export async function createPaidAdapter({save,answer,core:providedCore,mps:provi
     state=await persist(task,state,{...p,stage:'model-pending'});
     if(Date.now()>=Number(p.payment.submitResultTime))throw new Error('Result deadline expired before model send');
     const result=await answer(state.input,`.local/${task.id}-session.json`,Number(p.payment.submitResultTime));
-    if(typeof result!=='string'||!result.trim())throw new Error('Model did not return a result');
-    writeFileSync(`.local/${task.id}.txt`,result,{mode:0o600});
-    return persist(task,state,{...p,stage:'result-saved',result,resultHash:taskHash(result)});
+    if(result&&typeof result==='object'&&result.pass===false){
+     // lokal: failed check → never submit. The buyer's escrow becomes refundable after submitResultTime.
+     state=await persist(task,state,{...p,stage:'check-failed',result:result.text,check:result.check});
+     try{await (await verifyRuntimeTask(await getCore(),task.id,target)).post(`/v1/tasks/${encodeURIComponent(task.id)}/events`,{comment:`lokal: the result failed its automatic check (${result.check.reasons.slice(0,2).join('; ')}). It was not submitted, so you are not charged; the escrow is refundable after the result deadline.`})}catch{}
+     return state;
+    }
+    const text=typeof result==='object'?result.text:result;
+    if(typeof text!=='string'||!text.trim())throw new Error('Model did not return a result');
+    writeFileSync(`.local/${task.id}.txt`,text,{mode:0o600});
+    return persist(task,state,{...p,stage:'result-saved',result:text,resultHash:taskHash(text)});
    }
    if(p.stage==='awaiting-result'&&observed.resultHash===p.resultHash&&confirmedState(observed,'ResultSubmitted')&&observed.onChainState==='ResultSubmitted')return persist(task,state,{...p,stage:'complete-ready'});
    if(p.stage==='awaiting-withdrawal'&&['Withdrawn','DisputedWithdrawn'].includes(observed.onChainState)){const evidence=await verifySettlement({core:await verifyRuntimeTask(await getCore(),task.id,target),taskId:task.id,payment:observed,sellerAddress:registration().registration?.SmartContractWallet?.walletAddress,unit:USDM});return persist(task,state,{...p,stage:evidence.verified?'settled':'awaiting-withdrawal',settlement:evidence});}

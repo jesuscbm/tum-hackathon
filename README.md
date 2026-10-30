@@ -32,7 +32,7 @@ Each step has its own gotchas, and most people give up at the payment step.
 
 ## What lokal does
 
-`npx lokal` opens a terminal UI that walks you through five steps:
+One command installs lokal. Typing `lokal` opens a terminal UI that walks you through five steps:
 
 | # | Step | What happens |
 |---|---|---|
@@ -90,9 +90,9 @@ Sample inputs, both passing and failing, live in `templates/invoice-json/samples
   you  ───► │  tui/  (Ink)  ◄── events ──  core/                    │
             │                               ├─ runtime/  (install Ollama or llama.cpp, fetch model)
             │                               ├─ supervisor ─┬─► model server (Ollama / llama-server / external)
-            │                               │              ├─► quickstart agent (Eve)
-            │                               │              ├─► quickstart worker  ◄── Sokosumi tasks
-            │                               │              └─► quickstart agent API (MIP-003)
+            │                               │              ├─► coworker agent (Eve)
+            │                               │              ├─► coworker worker   ◄── Sokosumi tasks
+            │                               │              └─► coworker agent API (MIP-003)
             │                               ├─ steps/  (onboarding wizard)
             │                               ├─ pay/    (payment service, wallet, registry)
             │                               └─ checks/ + provenance
@@ -110,125 +110,155 @@ Sample inputs, both passing and failing, live in `templates/invoice-json/samples
 
 ```
 .
+├── install.sh                 # one-line installer: private Node 24, deps, Sokosumi CLI, `lokal` command
 ├── bin/
-│   └── lokal.mjs              # entry point: `npx lokal` starts the TUI
-├── tui/                       # Ink (React for terminals) UI
-│   ├── app.tsx                # router: wizard ↔ dashboard
-│   ├── wizard/                # 5 onboarding screens (machine, job, sokosumi, pay, live)
-│   ├── dashboard/             # earnings header, job feed, health strip
-│   └── components/            # progress bar, step rail, QR code, job card, links
-├── core/                      # engine. The TUI talks only to this interface.
-│   ├── index.mjs              # public API: steps, jobs, wallet, try(), events
-│   ├── events.mjs             # typed event bus (log, progress, step, job)
-│   ├── supervisor.mjs         # starts and restarts model server, agent, worker, agent API
-│   ├── hardware.mjs           # OS, CPU, RAM, GPU/VRAM detection
+│   └── lokal.mjs              # CLI entry: TUI (default), status, doctor, verify, uninstall, --mock
+├── tui/                       # Ink (React for terminals), no build step: components via htm
+│   ├── app.mjs                # wizard (5 steps), dashboard, logs, keyboard handling
+│   ├── components.mjs         # spinner, progress bar, check badge, cards, text input
+│   ├── theme.mjs              # colours, icons, clickable terminal links
+│   └── html.mjs               # htm binding (JSX-free)
+├── core/                      # engine. The TUI talks only to createCore() in index.mjs
+│   ├── index.mjs              # public API: status/run steps, tryIt, jobs, health, services
+│   ├── mock.mjs               # same API with fake data (LOKAL_MOCK=1 / --mock)
+│   ├── steps/                 # one module per wizard step: status() + run()
+│   │   ├── machine.mjs        # hardware → runtime → model → smoke test → writes ZAI_* env
+│   │   ├── job.mjs            # job templates, custom prompts, writes agent/instructions.md
+│   │   ├── sokosumi.mjs       # account, Vendor, Coworker, runtime key, Workspace
+│   │   ├── pay.mjs            # Blockfrost key, payment service, wallet, registry, paid tasks
+│   │   └── live.mjs           # services up, test job
 │   ├── runtime/               # model-server setup, no sudo, under ~/.local/share/lokal/
-│   │   ├── ollama.mjs         # detect existing → else download binary, serve, pull (streamed progress), digest
-│   │   ├── llamacpp.mjs       # download llama-server release, fetch GGUF from Hugging Face, sha256
-│   │   ├── models.json        # curated catalog: model, size, min RAM/VRAM, Ollama tag, GGUF URL
-│   │   └── recommend.mjs      # hardware → best-fitting model
-│   ├── backends/              # one client interface: ollama.mjs, llamacpp.mjs, openai-compatible.mjs
-│   ├── steps/                 # one module per wizard step: run(), status(), fix hints
-│   ├── health.mjs             # per-layer health checks
-│   ├── jobs.mjs               # job feed from worker journals + on-chain state
-│   └── mock.mjs               # fake core for UI development
-├── pay/                       # payment setup as idempotent steps (state saved after each)
-│   ├── mps.mjs                # Masumi Payment Service up and healthy
-│   ├── wallet.mjs             # selling wallet, faucet, balance via Blockfrost
-│   └── register.mjs           # runtime key + agent registration
+│   │   ├── ollama.mjs         # detect → install release binary → serve → pull (streamed) → digest
+│   │   ├── llamacpp.mjs       # detect a running llama-server, sha256 of GGUF weights
+│   │   ├── models.json        # curated catalog: size, min RAM/VRAM, context
+│   │   └── recommend.mjs      # hardware → best-fitting model (Llama preferred)
+│   ├── backends/openai.mjs    # streaming client for any OpenAI-compatible endpoint
+│   ├── supervisor.mjs         # starts/restarts agent, worker, agent API, payment service; never doubles one
+│   ├── sokosumi.mjs           # wrapper over the pinned Sokosumi CLI (--preprod --json)
+│   ├── jobs.mjs               # job feed from the worker journals + on-chain state
+│   ├── health.mjs             # one dot per layer for the dashboard
+│   ├── hardware.mjs  config.mjs  events.mjs  exec.mjs  paths.mjs
+├── pay/                       # payment setup as idempotent steps
+│   ├── mps.mjs                # own Masumi Payment Service: Postgres (docker), clone, migrate, seed
+│   ├── wallet.mjs             # selling wallet balance via Blockfrost, faucet, explorer links
+│   ├── register.mjs           # wraps coworker/payment-registration.mjs (key → register → poll)
+│   └── state.mjs              # shared paths + payment service client
 ├── checks/                    # deterministic result checks
-│   ├── index.mjs              # check(template, input, output) → { pass, reasons }
-│   ├── json.mjs  schema.mjs  regex.mjs  length.mjs
-│   └── invoice.mjs            # schema + line items sum to total
-├── provenance.mjs             # model digest + prompt hash → canonical result → hash
+│   ├── index.mjs              # check(config, input, output) → { pass, type, reasons }
+│   ├── json.mjs  schema.mjs   # JSON extraction, JSON-schema subset validator
+│   └── invoice.mjs            # schema + line items and tax sum to total
+├── provenance.mjs             # canonical result {model, digest, promptHash, check, output} → hash
 ├── templates/
-│   └── invoice-json/
-│       ├── template.json      # input description, check config
-│       ├── prompt.md          # system prompt
-│       └── samples/           # demo inputs (pass and fail)
-├── quickstart/                # Masumi TUM starter (agent, worker, paid flow). Our hooks: check + provenance.
-│   ├── agent/                 # Eve agent; instructions.md generated from the active template
-│   ├── worker.mjs             # polls Sokosumi tasks
-│   ├── paid-task.mjs          # escrow flow; calls check + provenance before submit-result
+│   ├── index.mjs              # list/load built-in + custom templates
+│   ├── invoice-json/          # template.json, prompt.md, samples/ (3 pass, 2 fail)
+│   └── freeform/              # no check
+├── coworker/                  # the Sokosumi Coworker processes, adapted from the Masumi TUM starter
+│   ├── lokal-gate.mjs         # our hook: check + retry + canonical result (active when LOKAL_TEMPLATE is set)
+│   ├── worker.mjs             # polls Sokosumi tasks; answers go through the gate
+│   ├── paid-task.mjs          # escrow flow; a failed check is never submitted (stage check-failed)
 │   └── agent-api.mjs          # MIP-003 agent API
-├── docs/
-│   ├── runbook.md             # every manual command that worked, the source for pay/ and steps/
-│   ├── verify.md              # how a buyer recomputes the result hash
-│   └── evidence.md            # task IDs, tx hashes and seller receipts for the submission
-└── .local/                    # (ignored) runtime state, journals, payment secrets
+├── test/                      # node:test suites for checks, provenance, templates
+└── docs/
+    ├── verify.md              # how a buyer recomputes the result hash
+    └── evidence.md            # task IDs, tx hashes and seller receipts for the submission
 ```
 
 ## Requirements
 
-- Node.js **24+**, npm, Git
-- [Sokosumi CLI](https://github.com/masumi-network/sokosumi/tree/main/apps/cli) **1.0.4** (pinned):
-  `npm install --global @masumi_network/sokosumi@1.0.4`
-- A system credential vault supported by the Sokosumi CLI
+- Linux or macOS (x64 or arm64), `curl` and `tar`. **You don't need Node or npm.** The installer
+  brings its own private copy.
+- A system credential vault supported by the Sokosumi CLI (GNOME Keyring / KWallet on Linux,
+  Keychain on macOS)
 - Nothing else for the model: lokal installs [Ollama](https://ollama.com) or
   [llama.cpp](https://github.com/ggml-org/llama.cpp) if no model server is found.
   Plan for 2–5 GB of disk per model.
-- Docker (for the Masumi Payment Service)
+- Docker, only for step 4. The Masumi Payment Service needs its own Postgres database, and lokal
+  starts it in a container. If Docker is missing, the TUI shows the install command for your OS.
 - A Sokosumi **preprod** account and a free [Blockfrost](https://blockfrost.io) preprod key
 
-## Quick start
+## Install
 
 ```sh
-git clone https://github.com/jesuscbm/tum-hackathon.git lokal
-cd lokal
-npm ci
-npx lokal
+curl -fsSL https://raw.githubusercontent.com/jesuscbm/tum-hackathon/main/install.sh | sh
+lokal
 ```
 
-The TUI takes it from there.
+Then the TUI takes over. The installer:
+- doesn't need sudo and writes only to `~/.local/share/lokal/` and `~/.local/bin/lokal`;
+- uses your Node if it is 24 or newer. Otherwise it downloads a pinned Node 24 from nodejs.org
+  into `~/.local/share/lokal/node` and checks its SHA-256;
+- installs lokal's dependencies and the pinned Sokosumi CLI **1.0.4** with that private Node;
+  you never run npm yourself;
+- adds `~/.local/bin` to your `PATH` if it is missing, and tells you so.
 
-### Manual setup (what lokal automates)
+You can [read the installer first](install.sh) before running it. To remove everything:
+`lokal uninstall`, or `rm -rf ~/.local/share/lokal ~/.local/bin/lokal`.
 
-Use this path if you want to run the starter without the TUI:
+### For contributors: run from source
 
 ```sh
-cd quickstart
-npm ci
-cp .env.example .env && chmod 600 .env   # fill in the values listed below
-npm start                                # terminal 1: agent
-npm run worker                           # terminal 2: worker
-npm run api                              # terminal 3: agent API (paid tasks only)
-npm test
+git clone https://github.com/jesuscbm/tum-hackathon.git lokal && cd lokal
+npm ci && (cd coworker && npm ci)
+node bin/lokal.mjs            # real setup
+node bin/lokal.mjs --mock     # fake backend: the whole flow in 30 seconds, nothing touched
+node bin/lokal.mjs status     # plain-text status of every step
+npm test && (cd coworker && npm test)
 ```
 
-Run only one worker per Coworker. Full manual steps are in [`docs/runbook.md`](docs/runbook.md).
+Point lokal at another coworker folder or state folder with `LOKAL_COWORKER_DIR` and `LOKAL_HOME`.
+
+### Headless (servers, SSH, CI)
+
+```sh
+lokal run machine                 # install/detect runtime, pull model, smoke test
+lokal run job invoice-json        # pick the job template
+lokal run sokosumi                # account, Vendor, Coworker, runtime key
+echo "$KEY" | lokal set BLOCKFROST_API_KEY_PREPROD
+lokal run pay                     # payment service, wallet + test ADA, registry
+lokal up                          # keep agent, worker and agent API running; logs to stdout
+```
+
+The commands lokal runs underneath are listed in [`docs/runbook.md`](docs/runbook.md).
 
 ## Configuration
 
-Secrets never go into git. lokal writes these for you. Only the **names** are listed here.
+**You never edit a config file.** `coworker/.env` is created from `coworker/.env.example` and filled in by
+the wizard; it is git-ignored and never leaves your machine. The only values lokal cannot find on its own:
 
-| File | Variables |
+| Value | Where lokal asks | Headless alternative |
+|---|---|---|
+| Blockfrost preprod key (free, [blockfrost.io](https://blockfrost.io)) | step 4, masked input | `lokal set BLOCKFROST_API_KEY_PREPROD` (reads stdin) or the `BLOCKFROST_API_KEY_PREPROD` env var |
+| Registry author name | defaults to your Sokosumi Vendor name | `lokal set AGENT_AUTHOR` or the `AGENT_AUTHOR` env var |
+| Sokosumi sign-in | step 3 opens your browser | `sokosumi --preprod auth login` |
+
+Everything else is detected or created: the model settings (`ZAI_*`), `COWORKER_ID`, the organization Workspace
+(step 3, key `o`), the payment service secrets, wallet and registration state.
+
+| Where secrets live | What |
 |---|---|
-| `quickstart/.env` | `ZAI_API_KEY`, `ZAI_BASE_URL`, `ZAI_MODEL`, `ZAI_CONTEXT_WINDOW_TOKENS`, `BLOCKFROST_API_KEY_PREPROD`, `EVE_PORT`, `EVE_URL`, `COWORKER_ID`, `SOKOSUMI_ORGANIZATION_ID`, `SOKOSUMI_ORGANIZATION_SLUG`, `AGENT_AUTHOR`, `MPS_PORT`, `MPS_URL`, `AGENT_API_PORT`, `PAID_TASKS_ENABLED` |
-| `quickstart/.local/mps.env` | `ADMIN_KEY` (payment service admin) |
-| `quickstart/.local/mps-runtime.env` | `MPS_RUNTIME_TOKEN` (wallet-scoped key) |
-| CLI vault | Coworker runtime key (never in files) |
-
-lokal fills in the model settings for the runtime it set up:
-
-| Runtime | `ZAI_BASE_URL` | `ZAI_API_KEY` | `ZAI_MODEL` |
-|---|---|---|---|
-| Ollama | `http://127.0.0.1:11434/v1` | `ollama` | e.g. `llama3.2:3b` |
-| llama.cpp | `http://127.0.0.1:8080/v1` | `lokal` | the GGUF model name |
-
-`ZAI_CONTEXT_WINDOW_TOKENS` is set to the context size lokal starts the server with (default `32768`).
+| `coworker/.env` | model endpoint, Coworker and Workspace IDs, Blockfrost key, ports (names in `.env.example`) |
+| `coworker/.local/mps.env` | payment service `ADMIN_KEY`, database password, encryption key (generated) |
+| `coworker/.local/mps-runtime.env` | `MPS_RUNTIME_TOKEN` (wallet-scoped key, generated) |
+| Sokosumi CLI vault | Coworker runtime key (never in files) |
+| `~/.local/share/lokal/` | private Node, Ollama, payment service checkout, `config.json`, logs |
 
 ## Status
 
 The submission checklist asks us to keep what works separate from what is pending.
 
-- [ ] lokal installs a runtime and downloads a model on a machine without one
-- [ ] Local model answers a free Sokosumi task (TUM workspace)
-- [ ] Payment service running, selling wallet funded, agent registered
+- [x] Llama 3.2 3B via Ollama passes the 3 passing invoice samples and fails the 2 failing ones (CPU, 15–35 s each)
+- [x] The coworker's Eve agent runs on the local model (Ollama OpenAI-compatible endpoint)
+- [x] Steps 1–2 run end to end against a scratch coworker copy (model detected, smoke test, template selected, try-it passed)
+- [x] TUI wizard + dashboard (real and `--mock`), `lokal status`, `lokal verify`
+- [x] Installer tested from a local checkout into an empty home (private Node 24, sha256 verified)
+- [x] `npm run smoke`: clean-room install + CLI + tests with no accounts or keys (also in CI)
+- [x] Payment service phase A for real: Postgres in Docker, pinned checkout, install, migrate
+- [ ] lokal installs Ollama on a machine without one (code written, untested)
+- [ ] Local model answers a free Sokosumi task through the gate (TUM workspace)
+- [ ] Payment service phase B (wallets, needs Blockfrost key), automatic test ADA, agent registered (code written, untested)
 - [ ] Paid task completed: tx hash + seller receipt in [`docs/evidence.md`](docs/evidence.md)
-- [ ] Check gate: failing output is not submitted
-- [ ] Provenance: on-chain `resultHash` matches the recomputed canonical result
-- [ ] TUI wizard end to end
-- [ ] Fresh-machine run: time from `npx lokal` to first paid job: **__ min**
+- [ ] Check gate on a real paid task: failing output is not submitted
+- [ ] Fresh-machine run: time from the install command to the first paid job: **__ min**
 
 ## Cardano tools used
 

@@ -1,0 +1,7 @@
+[
+ {"id":"llama3.2:1b","name":"Llama 3.2 1B","family":"llama","sizeGB":1.3,"minRamGB":4,"contextTokens":32768,"note":"tiny machines; fails checks more often"},
+ {"id":"llama3.2:3b","name":"Llama 3.2 3B","family":"llama","sizeGB":2.0,"minRamGB":8,"contextTokens":32768,"note":"best default for laptops without a GPU"},
+ {"id":"qwen2.5:3b","name":"Qwen 2.5 3B","family":"qwen","sizeGB":1.9,"minRamGB":8,"contextTokens":32768,"note":"strong at structured JSON"},
+ {"id":"llama3.1:8b","name":"Llama 3.1 8B","family":"llama","sizeGB":4.9,"minRamGB":16,"minVramGB":6,"contextTokens":32768,"note":"needs a GPU or 16 GB RAM"},
+ {"id":"qwen2.5:14b","name":"Qwen 2.5 14B","family":"qwen","sizeGB":9.0,"minRamGB":32,"minVramGB":12,"contextTokens":32768,"note":"workstation GPUs"}
+]

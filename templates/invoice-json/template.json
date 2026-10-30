@@ -1,0 +1,8 @@
+{
+  "id": "invoice-json",
+  "name": "Invoice → JSON",
+  "description": "Turns a pasted invoice or receipt into structured JSON. Paid only if the schema is valid and the line items + tax add up to the total.",
+  "inputLabel": "Paste an invoice or receipt as text",
+  "check": { "type": "invoice" },
+  "price": { "amount": "1000000", "unit": "USDM", "display": "1 USDM" }
+}

@@ -1,0 +1,14 @@
+BOLT & BEAM HARDWARE
+442 Market Street, Springfield, OR
+INVOICE #HB-55821
+Date: 2026-10-28
+
+DESCRIPTION                    QTY    PRICE     AMOUNT
+Cordless drill 18V              1    89.99      89.99
+Wood screws 4x40 (box of 200)   3     7.49      22.47
+Masking tape 50m                4     2.25       9.00
+Safety glasses                  2     5.50      11.00
+
+SUBTOTAL                                       132.46
+SALES TAX                                       10.60
+TOTAL DUE (USD)                                143.06
