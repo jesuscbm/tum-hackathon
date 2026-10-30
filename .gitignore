@@ -45,3 +45,5 @@ Thumbs.db
 
 # lokal backups of replaced agent instructions
 *.before-lokal
+**/docs/preprod/
+**/docs/mainnet/

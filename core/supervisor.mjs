@@ -1,68 +1,97 @@
 import {spawn} from 'node:child_process';
 import {existsSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {COWORKER_DIR} from './paths.mjs';
-import {readEnv} from './config.mjs';
 import {bus,log} from './events.mjs';
+import * as cw from './coworkers.mjs';
 import * as mps from '../pay/mps.mjs';
 // Keeps the coworker processes alive. Never starts a second copy of something already running.
+// Service ids: agent, worker, api (main Coworker), agent@<id>, worker@<id>, api@<id> (extra ones), mps (shared).
 const ENVF=['--env-file-if-exists=.env'];
-const SERVICES={
- agent:{label:'Agent (Eve)',cmd:()=>({cmd:process.execPath,args:[...ENVF,'start.mjs'],cwd:COWORKER_DIR}),probe:async()=>{const u=readEnv().EVE_URL||'http://127.0.0.1:21949';try{await fetch(u,{signal:AbortSignal.timeout(1500)});return true}catch{return false}}},
- worker:{label:'Worker',needs:['agent'],cmd:()=>({cmd:process.execPath,args:[...ENVF,'worker.mjs'],cwd:COWORKER_DIR}),probe:async()=>{const f=join(COWORKER_DIR,'.local','worker.lock');if(!existsSync(f))return false;try{process.kill(Number(readFileSync(f,'utf8')),0);return true}catch{return false}}},
- api:{label:'Agent API (MIP-003)',paidOnly:true,cmd:()=>({cmd:process.execPath,args:[...ENVF,'--env-file-if-exists=.local/mps-runtime.env','agent-api.mjs'],cwd:COWORKER_DIR}),probe:async()=>{try{return (await fetch(`http://127.0.0.1:${readEnv().AGENT_API_PORT||21950}/availability`,{signal:AbortSignal.timeout(1500)})).ok}catch{return false}}},
- mps:{label:'Payment service',optional:true,preStart:async()=>{await mps.clearStaleLocks();await mps.skipContractHistory()},cmd:()=>mps.command(),probe:()=>mps.health()},
+const KINDS={
+ agent:{label:'Agent (Eve)',cmd:c=>({cmd:process.execPath,args:[...ENVF,'start.mjs']}),probe:async c=>{try{await fetch(c.env.EVE_URL||`http://127.0.0.1:${c.ports.eve}`,{signal:AbortSignal.timeout(1500)});return true}catch{return false}}},
+ worker:{label:'Worker',cmd:c=>({cmd:process.execPath,args:[...ENVF,'worker.mjs']}),probe:async c=>{const f=join(c.dir,'.local','worker.lock');if(!existsSync(f))return false;try{process.kill(Number(readFileSync(f,'utf8')),0);return true}catch{return false}}},
+ api:{label:'Agent API (MIP-003)',paidOnly:true,cmd:c=>({cmd:process.execPath,args:[...ENVF,'--env-file-if-exists=.local/mps-runtime.env','agent-api.mjs']}),probe:async c=>{try{return (await fetch(`http://127.0.0.1:${c.ports.api}/availability`,{signal:AbortSignal.timeout(1500)})).ok}catch{return false}}},
 };
-const state=Object.fromEntries(Object.keys(SERVICES).map(k=>[k,{id:k,label:SERVICES[k].label,status:'stopped',pid:null,restarts:0,external:false}]));
-const children={};let stopping=false;
+const MPS={label:'Payment service',preStart:async()=>{await mps.clearStaleLocks();await mps.skipContractHistory()},cmd:()=>mps.command(),probe:()=>mps.health()};
+export const serviceId=(kind,c)=>c.primary?kind:`${kind}@${c.id}`;
+function resolve(id){
+ if(id==='mps')return {...MPS,id,kind:'mps',coworker:null};
+ const [kind,cid='main']=id.split('@');const c=cw.get(cid);const k=KINDS[kind];
+ if(!k||!c)return null;
+ return {id,kind,coworker:c.id,label:c.primary?k.label:`${k.label} · ${c.name}`,paidOnly:k.paidOnly,probe:()=>k.probe(c),cmd:async()=>({...k.cmd(c),cwd:c.dir,env:cw.sharedEnv(c)})};
+}
+const known=()=>['mps',...cw.list().flatMap(c=>Object.keys(KINDS).map(k=>serviceId(k,c)))];
+const state={};
+const entry=id=>{const r=resolve(id);return state[id]??={id,kind:r?.kind??id,coworker:r?.coworker??null,label:r?.label??id,status:'stopped',pid:null,restarts:0,external:false,startedAt:null}};
+const children={};let stopping=false;const stoppingOne=new Set();
 // Children run in their own process group; signal the group so grandchildren (pnpm → tsx → node) stop too.
 const killTree=(c,sig)=>{try{process.kill(-c.pid,sig)}catch{try{c.kill(sig)}catch{}}};
 process.once('exit',()=>{for(const c of Object.values(children))killTree(c,'SIGTERM')});
 const emit=()=>bus.emit('services',services());
-export const services=()=>Object.values(state).map(s=>({...s}));
-function set(id,patch){Object.assign(state[id],patch);emit();}
+export const services=()=>{const ids=known();for(const id of ids)entry(id);return Object.values(state).filter(s=>children[s.id]||ids.includes(s.id)).map(s=>({...s}))};
+function set(id,patch){Object.assign(entry(id),patch);emit();}
 export async function refresh(){
- for(const [id,svc] of Object.entries(SERVICES)){
+ for(const id of known()){
   if(children[id])continue;
-  const up=await svc.probe().catch(()=>false);
-  set(id,up?{status:'running',external:true}:{status:'stopped',external:false});
+  const r=resolve(id);const up=await r.probe().catch(()=>false);
+  set(id,up?{status:'running',external:true}:{status:'stopped',external:false,pid:null});
  }
  return services();
 }
-export async function start(id){
- const svc=SERVICES[id];if(children[id])return;
+// In-flight starts: a second start() of the same service while the first is still probing must not spawn twice.
+const pending=new Map();
+export function start(id){
+ if(children[id])return Promise.resolve();
+ if(!pending.has(id))pending.set(id,spawnService(id).finally(()=>pending.delete(id)));
+ return pending.get(id);
+}
+async function spawnService(id){
+ const svc=resolve(id);if(!svc)throw new Error(`Unknown service ${id}`);
  if(await svc.probe().catch(()=>false)){set(id,{status:'running',external:true});log(id,'Already running outside lokAl; leaving it alone');return;}
  await svc.preStart?.();
  const {cmd,args,cwd,env}=await svc.cmd();
  if(!existsSync(cwd))throw new Error(`${svc.label}: ${cwd} not found`);
- set(id,{status:'starting',external:false});
+ set(id,{status:'starting',external:false,label:svc.label});
  const child=spawn(cmd,args,{cwd,stdio:['ignore','pipe','pipe'],env:{...process.env,...(env??{})},detached:true});
- children[id]=child;set(id,{pid:child.pid});
+ children[id]=child;set(id,{pid:child.pid,startedAt:Date.now()});
  // The payment service logs a heartbeat every second; keep it in the log file, out of the UI.
  const pipe=d=>{for(const l of String(d).split('\n'))if(l.trim()){log(id,l,id==='mps'&&!/error|warn|fail/i.test(l)?'debug':'info');if(state[id].status==='starting')set(id,{status:'running'});}};
  child.stdout.on('data',pipe);child.stderr.on('data',pipe);
+ child.on('error',e=>log(id,e.message,'error'));
  setTimeout(()=>{if(children[id]===child&&state[id].status==='starting')set(id,{status:'running'})},3000);
  child.on('exit',code=>{
   delete children[id];
-  if(stopping){set(id,{status:'stopped',pid:null});return;}
+  if(stopping||stoppingOne.has(id)){stoppingOne.delete(id);set(id,{status:'stopped',pid:null,startedAt:null});return;}
   const r=state[id].restarts+1;
-  set(id,{status:r>5?'failed':'restarting',pid:null,restarts:r,lastExit:code});
+  set(id,{status:r>5?'failed':'restarting',pid:null,startedAt:null,restarts:r,lastExit:code});
   log(id,`exited with code ${code}`,'error');
-  if(r<=5)setTimeout(()=>start(id).catch(e=>log(id,e.message,'error')),Math.min(30000,1000*2**r));
+  if(r<=5)setTimeout(()=>{if(!stopping&&resolve(id))start(id).catch(e=>log(id,e.message,'error'))},Math.min(30000,1000*2**r));
  });
 }
-export async function startAll({paid=readEnv().PAID_TASKS_ENABLED==='true'}={}){
+// One startAll at a time (lokald's own start and a UI request can overlap).
+let starting=null;
+export function startAll(){return starting??=startAllNow().finally(()=>{starting=null})}
+async function startAllNow(){
  stopping=false;
- if(paid&&mps.status&&(await mps.status()).installed)await start('mps');
- await start('agent');
+ const all=cw.list();
+ if(all.some(c=>c.paid)&&(await mps.status()).installed)await start('mps').catch(e=>log('mps',e.message,'error'));
+ for(const c of all)if(c.coworkerId)await start(serviceId('agent',c)).catch(e=>log(serviceId('agent',c),e.message,'error'));
  await new Promise(r=>setTimeout(r,4000));
- await start('worker');
- if(paid)await start('api');
+ for(const c of all){
+  if(!c.coworkerId){log('supervisor',`${c.name}: no Sokosumi Coworker yet, not starting it`);continue;}
+  await start(serviceId('worker',c)).catch(e=>log(serviceId('worker',c),e.message,'error'));
+  if(c.paid)await start(serviceId('api',c)).catch(e=>log(serviceId('api',c),e.message,'error'));
+ }
 }
-export async function stopAll(){
- stopping=true;
- for(const [id,c] of Object.entries(children)){killTree(c,'SIGTERM');set(id,{status:'stopping'});}
- for(let i=0;i<40&&Object.keys(children).length;i++)await new Promise(r=>setTimeout(r,250));
- for(const c of Object.values(children))killTree(c,'SIGKILL');
+async function stopIds(ids){
+ for(const id of ids)if(children[id]){stoppingOne.add(id);killTree(children[id],'SIGTERM');set(id,{status:'stopping'});}
+ for(let i=0;i<40&&ids.some(id=>children[id]);i++)await new Promise(r=>setTimeout(r,250));
+ for(const id of ids)if(children[id])killTree(children[id],'SIGKILL');
 }
-export async function restart(id){if(children[id]){stopping=true;killTree(children[id],'SIGTERM');for(let i=0;i<40&&children[id];i++)await new Promise(r=>setTimeout(r,250));stopping=false;}state[id].restarts=0;await start(id);}
+export async function stopAll(){stopping=true;await stopIds(Object.keys(children));}
+// Stops one Coworker's processes (before removing it) and forgets them.
+export async function stopCoworker(cid){
+ const ids=Object.keys(state).filter(id=>state[id].coworker===cid);
+ await stopIds(ids);for(const id of ids)delete state[id];emit();
+}
+export async function restart(id){if(children[id])await stopIds([id]);entry(id).restarts=0;await start(id);}

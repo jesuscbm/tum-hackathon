@@ -25,6 +25,14 @@ ok()   { printf "  ${G}✔${N} %s\n" "$1"; }
 skip() { printf "  ${D}· %s${N}\n" "$1"; }
 printf "\n${V}◆ lokAl${N} uninstall\n\n"
 
+# 0. lokald (the background service) stops its own children cleanly; the systemd unit, if any, goes too.
+UNIT="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/lokald.service"
+if [ -f "$UNIT" ]; then
+  systemctl --user disable --now lokald.service >/dev/null 2>&1; rm -f "$UNIT"; systemctl --user daemon-reload >/dev/null 2>&1
+  ok "Removed the lokald systemd unit"
+fi
+[ -x "$BIN_DIR/lokal" ] && "$BIN_DIR/lokal" down >/dev/null 2>&1 && ok "Stopped lokald and its services"
+
 # 1. Stop everything lokal started (all of it runs from inside LOKAL_HOME).
 #    Skip this script and its parent (`lokal uninstall` runs it from inside LOKAL_HOME).
 others() { pgrep -f "$LOKAL_HOME/" 2>/dev/null | grep -vxE "$$|$PPID" ; }
@@ -52,7 +60,8 @@ if [ "$MODELS" = 1 ]; then
   if [ -d "$HOME/.ollama/models" ]; then rm -rf "$HOME/.ollama/models" && ok "Deleted Ollama models (~/.ollama/models)"; else skip "No Ollama models"; fi
 fi
 
-# 5. lokAl's own folder: private Node, private Ollama, payment service, coworker config + wallets state, logs.
+# 5. lokAl's own folder: private Node, private Ollama, payment service, coworker config + wallets state, extra
+#    Coworkers, the file vault used on machines without a keyring (Sokosumi login + runtime keys), logs.
 if [ -d "$LOKAL_HOME" ]; then rm -rf "$LOKAL_HOME" && ok "Deleted $LOKAL_HOME"; else skip "$LOKAL_HOME not found"; fi
 
 # 6. Commands, but only the ones that point into lokal.

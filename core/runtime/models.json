@@ -2,6 +2,10 @@
  {"id":"llama3.2:1b","name":"Llama 3.2 1B","family":"llama","sizeGB":1.3,"minRamGB":4,"contextTokens":32768,"note":"tiny machines; fails checks more often"},
  {"id":"llama3.2:3b","name":"Llama 3.2 3B","family":"llama","sizeGB":2.0,"minRamGB":8,"contextTokens":32768,"note":"best default for laptops without a GPU"},
  {"id":"qwen2.5:3b","name":"Qwen 2.5 3B","family":"qwen","sizeGB":1.9,"minRamGB":8,"contextTokens":32768,"note":"strong at structured JSON"},
+ {"id":"qwen2.5:7b","name":"Qwen 2.5 7B","family":"qwen","sizeGB":4.7,"minRamGB":16,"minVramGB":6,"contextTokens":32768,"note":"reliable JSON; any 8 GB GPU"},
  {"id":"llama3.1:8b","name":"Llama 3.1 8B","family":"llama","sizeGB":4.9,"minRamGB":16,"minVramGB":6,"contextTokens":32768,"note":"needs a GPU or 16 GB RAM"},
- {"id":"qwen2.5:14b","name":"Qwen 2.5 14B","family":"qwen","sizeGB":9.0,"minRamGB":32,"minVramGB":12,"contextTokens":32768,"note":"workstation GPUs"}
+ {"id":"gemma3:12b","name":"Gemma 3 12B","family":"gemma","sizeGB":8.1,"minRamGB":24,"minVramGB":10,"contextTokens":32768,"note":"12 GB GPUs"},
+ {"id":"qwen2.5:14b","name":"Qwen 2.5 14B","family":"qwen","sizeGB":9.0,"minRamGB":32,"minVramGB":12,"contextTokens":32768,"note":"workstation GPUs"},
+ {"id":"qwen2.5:32b","name":"Qwen 2.5 32B","family":"qwen","sizeGB":20,"minRamGB":64,"minVramGB":24,"contextTokens":32768,"note":"24 GB GPUs (RTX 3090/4090, L4)"},
+ {"id":"llama3.3:70b","name":"Llama 3.3 70B","family":"llama","sizeGB":43,"minRamGB":96,"minVramGB":48,"contextTokens":32768,"note":"A100/H100 or 2× 24 GB GPUs"}
 ]

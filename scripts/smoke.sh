@@ -10,6 +10,11 @@ HOME="$T" LOKAL_SRC="$ROOT" LOKAL_NO_START=1 sh "$ROOT/install.sh"
 L="$T/.local/bin/lokal"
 echo "== lokal --help";        HOME="$T" "$L" --help >/dev/null
 echo "== lokal status --mock"; HOME="$T" "$L" status --mock | grep -q "Your machine & model"
+echo "== lokal info/coworker --mock"; HOME="$T" "$L" info --mock | grep -q "Network: Preprod"; HOME="$T" "$L" coworker list --mock | grep -q main
+echo "== lokald start/status/down (nothing to run yet)"
+HOME="$T" "$L" daemon start | grep -q "lokald running"
+HOME="$T" "$L" daemon status | grep -q "lokald running"
+HOME="$T" "$L" down | grep -q "stopped"
 echo "== lokal verify"
 printf '%s' '{"check":{"pass":true,"reasons":[],"type":"none"},"digest":null,"model":"m","output":"hi","promptHash":"sha256:00","template":"freeform","v":1}' > "$T/r.json"
 H=$(HOME="$T" "$L" verify "$T/r.json")

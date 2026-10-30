@@ -14,3 +14,5 @@ export function log(source,line,level='info'){
 }
 export const recentLogs=(n=50,source)=>tail.filter(e=>!source||e.source===source).slice(-n);
 export function progress(id,label,pct){bus.emit('progress',{type:'progress',id,label,pct,at:Date.now()});}
+// Events from lokald (already in the log file): into the local tail and onto the bus.
+export function ingest(e){if(e.type==='log'||e.line!==undefined){tail.push(e);if(tail.length>500)tail.shift();bus.emit('log',e);}}
