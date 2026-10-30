@@ -74,21 +74,23 @@ function JobPanel({s,ui}){
     <${Text} color=${x.id===s.active?C.ok:C.text}>${x.id===s.active?'✔ ':''}${x.name}${x.custom?' ✎':''}</${Text}></${Box}>`)}
    <${Box} borderStyle="round" borderColor=${custom?C.accent:C.card} paddingX=${1}><${Text}>+ Your prompt</${Text}></${Box}>
   </${Box}>
-  ${custom?html`<${Box} flexDirection="column"><${Text} color=${C.dim}>enter: write a prompt in $EDITOR · i: import a Markdown file (.md with front matter: name, check, price)</${Text}>
+  ${custom?html`<${Box} flexDirection="column"><${Text} color=${C.dim}>enter: write a prompt in $EDITOR · f: import a Markdown file (.md with front matter: name, check, price)</${Text}>
    <${Text} color=${C.dim}>Tip: .md files in ~/.local/share/lokal/templates/ show up here as jobs.</${Text}></${Box}>`:t?html`<${Box} flexDirection="column">
-   <${Text} color=${C.dim} wrap="wrap">${t.description}</${Text}>
+   <${Text} color=${C.dim} wrap="wrap">${t.description||'(no description)'}</${Text}>
+   <${Text} color=${C.dim} wrap="truncate-end">prompt: <${Text} color=${C.text}>${t.preview}</${Text}></${Text}>
    <${Text}>check: <${Text} color=${t.check?.type==='none'?C.warn:C.ok}>${t.check?.type}</${Text}>${t.price?html`<${Text} color=${C.dim}>   price: ${t.price.display}</${Text}>`:null}</${Text}>
-   ${sample?html`<${Text}>sample (s): <${Text} color=${C.accent2}>${sample.name}</${Text}> <${Text} color=${C.dim}>expected to ${sample.expect}</${Text}></${Text}>`:null}
+   ${sample?html`<${Text}>sample input (s for the next of ${t.samples.length}): <${Text} color=${C.accent2}>${sample.name}</${Text}> <${Text} color=${C.dim}>should ${sample.expect} the check</${Text}></${Text}>`:html`<${Text} color=${C.dim}>no sample inputs: t asks you for one</${Text}>`}
   </${Box}>`:null}
   ${ui.mode==='pickCheck'?html`<${Box} marginTop=${1} flexDirection="column"><${Text} color=${C.warn}>Pick a check for your prompt (←/→, enter):</${Text}>
    <${Box}>${CHECK_TYPES.map((c,i)=>html`<${Text} key=${c.type} color=${i===ui.check%CHECK_TYPES.length?C.accent:C.dim}> ${i===ui.check%CHECK_TYPES.length?'●':'○'} ${c.label} </${Text}>`)}</${Box}>
    <${Text} color=${C.dim}>${CHECK_TYPES[ui.check%CHECK_TYPES.length].description}</${Text}></${Box}>`:null}
   ${ui.tryState?html`<${Card} title=${ui.tryState.done?`Model answer · ${ui.tryState.seconds}s`:'Model is answering…'}>
+   <${Text} color=${C.dim} wrap="truncate-end">in: ${String(ui.tryState.input??'').replace(/\s+/g,' ').slice(0,200)}</${Text}>
    <${Text} color=${C.text} wrap="truncate-end">${(ui.tryState.text||'').replace(/\s+/g,' ').slice(-600)}</${Text}>
    ${ui.tryState.done?html`<${Box} marginTop=${1}><${Badge} pass=${ui.tryState.check.pass}/><${Text} color=${C.dim}> ${ui.tryState.check.reasons.slice(0,2).join('; ')}</${Text}></${Box}>`:html`<${Spinner}/>`}
   </${Card}>`:null}
   <${Items} items=${s.items}/>
-  <${Hints} keys=${[['←/→','template'],['enter',custom?'write prompt':'use this job'],...(custom?[['i','import .md']]:[['s','next sample'],['t','try it']])]}/>
+  <${Hints} keys=${[['←/→','template'],['enter',custom?'write prompt':'use this job'],...(custom?[['f','import .md file']]:[...(t?.samples?.length?[['s','next sample'],['t','try sample']]:[['t','try it']]),['y','try your own input']])]}/>
  </${Box}>`;
 }
 function SokosumiPanel({s}){
@@ -274,14 +276,16 @@ export function App({core}){
   if(d.i+1<d.fields.length){setUi(u=>({...u,dialog:{...d,i:d.i+1,values}}));return}
   close();d.onDone(values);};
 
- async function tryIt(){
+ // Runs the template's own prompt + check on the model. Input: the chosen sample, or text you type.
+ async function tryIt(own){
   const t=s.templates?.[ui.tpl%(s.templates.length+1)];if(!t)return;
   const full=loadTemplate(t.id);const sample=orderedSamples(full)[ui.sample%Math.max(full.samples.length,1)];
-  const input=sample?.text??'Hello! What can you do?';
-  setUi(u=>({...u,tryState:{text:'',done:false}}));
+  if(own===undefined&&!sample){form(`Try ${t.name}`,[{key:'v',label:'Input for the model (what a buyer would send)'}],v=>tryIt(v.v),'Runs your prompt and its check on the model right now. Nothing is sent to Sokosumi.');return}
+  const input=own??sample.text;
+  setUi(u=>({...u,tryState:{text:'',done:false,input}}));
   const onTry=e=>setUi(u=>({...u,tryState:{...u.tryState,text:e.text}}));
   core.bus.on('try',onTry);
-  try{const r=await core.tryIt(t.id,input);setUi(u=>({...u,tryState:{text:r.output,done:true,check:r.check,seconds:r.seconds}}));refresh(sel);}
+  try{const r=await core.tryIt(t.id,input);setUi(u=>({...u,tryState:{text:r.output,done:true,check:r.check,seconds:r.seconds,input}}));refresh(sel);}
   catch(e){setUi(u=>({...u,tryState:null}));flash('✖ '+e.message);}
   finally{core.bus.off('try',onTry);}
  }
@@ -315,7 +319,6 @@ export function App({core}){
   form('New Coworker',[{key:'name',label:'Name (e.g. Contract summary)'}],v=>templatePicker(`Job for ${v.name}`,tpl=>confirm(`Create the Sokosumi Coworker "${v.name}" doing ${tpl}? This registers it on Sokosumi under your Vendor.`,{
    y:['create',()=>attempt(async()=>{const c=await core.addCoworker({name:v.name,template:tpl});setCws(core.coworkers());return c},c=>`✔ ${c.name} created${c.coworkerId?' and registered':' (not on Sokosumi yet)'}. ${daemon?.running?'Its services are starting.':'Start services with enter in step 5.'}`)]})));
  }
- const restartCw=async c=>{if((await core.daemon()).running)for(const k of ['agent','worker'])await core.restartService(c.primary?k:`${k}@${c.id}`).catch(()=>{})};
 
  useInput(async(input,key)=>{
   const d=ui.dialog;
@@ -364,7 +367,7 @@ export function App({core}){
    if(key.upArrow)setCsel(i=>Math.max(0,i-1));
    if(key.downArrow)setCsel(i=>Math.min(cws.length-1,i+1));
    if(input==='a')addCoworker();
-   if(c&&key.return)templatePicker(`New job for ${c.name}`,tpl=>attempt(async()=>{await core.setCoworkerTemplate(c.id,tpl);setCws(core.coworkers());await restartCw(c)},`✔ ${c.name} now does ${tpl}`),c.template);
+   if(c&&key.return)templatePicker(`New job for ${c.name}`,tpl=>attempt(async()=>{await core.setCoworkerTemplate(c.id,tpl);setCws(core.coworkers())},`✔ ${c.name} now does ${tpl}`),c.template);
    if(c&&input==='t')attempt(()=>core.sendTestJob(0,c),r=>`✔ Test task ${String(r?.id??'').slice(0,8)} sent to ${c.name}`);
    if(c&&input==='p'&&!c.paid)confirm(`Register ${c.name} on the Masumi registry (${net}) so it can take paid jobs? This is an on-chain transaction from the selling wallet.`,{y:['register',()=>attempt(()=>core.registerCoworkerPaid(c.id),'✔ Registration submitted. It confirms in a few minutes.')]});
    if(c&&input==='x'){if(c.primary)flash('The main Coworker belongs to the setup wizard; it cannot be removed.');
@@ -386,9 +389,10 @@ export function App({core}){
    if(key.rightArrow)setUi(u=>({...u,tpl:(u.tpl+1)%n,sample:0,tryState:null}));
    if(input==='s')setUi(u=>({...u,sample:u.sample+1,tryState:null}));
    if(input==='t'&&!custom)tryIt();
-   if(input==='i'&&custom)form('Import a Markdown prompt',[{key:'path',label:'Path to the .md file'}],v=>attempt(()=>core.importPrompt(resolve(v.path.replace(/^~(?=\/)/,process.env.HOME??'~'))),'✔ Imported and selected'),
+   if(input==='y'&&!custom)form('Try it',[{key:'v',label:'Input for the model (what a buyer would send)'}],v=>tryIt(v.v),'Runs this prompt and its check on the model right now. Nothing is sent to Sokosumi.');
+   if(input==='f'&&custom)form('Import a Markdown prompt',[{key:'path',label:'Path to the .md file'}],v=>attempt(()=>core.importPrompt(resolve(v.path.replace(/^~(?=\/)/,process.env.HOME??'~'))),'✔ Imported and selected'),
     'Front matter between --- lines: name, description, check (none|json|schema|regex|length|invoice), pattern / min / max / schema, price. The rest is the prompt.');
-   if(key.return){if(custom)editPrompt();else{await core.selectTemplate(s.templates[ui.tpl%n].id);flash('✔ Job selected. The agent now uses this prompt and check.');refresh(sel)}}
+   if(key.return){if(custom)editPrompt();else{await core.selectTemplate(s.templates[ui.tpl%n].id);flash(daemon?.running?'✔ Job selected; the agent and worker were restarted with it.':'✔ Job selected. The agent uses it from its next start.');refresh(sel)}}
   }
   if(id==='sokosumi'){
    const signedOut=s.items?.find(i=>i.label==='Account'&&i.status!=='ok');

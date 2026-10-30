@@ -7,7 +7,7 @@ import {createPaidAdapter,isPaidReady} from './paid-task.mjs';
 import {taskTarget,isTaskForTarget} from './task-target.mjs';
 import {gate} from './lokal-gate.mjs';
 import {networkOf} from '../core/network.mjs';
-// lokal: paid Sokosumi Tasks use the Coworker runtime, which Sokosumi CLI 1.0.4 offers on preprod only.
+// lokal: paid Sokosumi Tasks use the Coworker runtime, which Sokosumi CLI 1.1.0 offers on preprod only.
 // On mainnet, paid jobs come in through the MIP-003 agent API instead; Tasks here are answered free.
 const paidTasks=process.env.PAID_TASKS_ENABLED==='true'&&networkOf().test;
 const gated=gate(answer);

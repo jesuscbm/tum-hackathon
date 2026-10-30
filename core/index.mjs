@@ -24,6 +24,14 @@ import {verifyResult} from '../provenance.mjs';
 export const STEPS=[machine,job,sokosumi,pay,live];
 const running=new Set(),errors={};
 // Values a user may pass as environment variables instead of typing them in the UI (CI, servers).
+// After a job change the running agent and worker still hold the old prompt and check: restart the ones lokald runs.
+async function applyJob(cid='main'){
+ if(!(await daemon.status()).running)return;
+ const ids=['agent','worker'].map(k=>cid==='main'?k:`${k}@${cid}`);
+ const up=(await services.list()).filter(s=>ids.includes(s.id)&&s.status==='running'&&!s.external).map(s=>s.id);
+ for(const id of up)await services.restart(id);
+ if(up.length)log('job',`Restarted ${up.join(', ')} so ${cid==='main'?'they use':`${cid} uses`} the new job`);
+}
 const PASSTHROUGH=['BLOCKFROST_API_KEY_PREPROD','BLOCKFROST_API_KEY_MAINNET','AGENT_AUTHOR','AGENT_PUBLIC_URL'];
 export function createCore(){
  const {headless,vault}=setupHeadless();
@@ -48,7 +56,9 @@ export function createCore(){
   // step 1: model backends
   chooseModel:machine.chooseModel,useExternal:guarded('machine',machine.useExternal),useLlamacpp:guarded('machine',machine.useLlamacpp),useOllama:machine.useOllama,
   // step 2: jobs and prompts
-  selectTemplate:job.select,createTemplate:job.createCustom,importPrompt:job.importPrompt,
+  async selectTemplate(id){const s=await job.select(id);await applyJob();return s},
+  async createTemplate(t){const s=await job.createCustom(t);await applyJob();return s},
+  async importPrompt(f){const s=await job.importPrompt(f);await applyJob();return s},
   templates:()=>listTemplates().map(({prompt,samples,...t})=>t),
   // step 3: Sokosumi (browser, or API key / sign-in link when headless)
   login:sokosumi.login,loginWithKey:sokosumi.loginWithKey,useOrganization:sokosumi.useOrganization,usePersonal:sokosumi.usePersonal,
@@ -80,7 +90,7 @@ export function createCore(){
   coworkers:()=>cw.list().map(({env,...c})=>c),
   async addCoworker(opts){const c=await cw.add(opts);if(c.coworkerId&&(await daemon.status()).running)await services.startAll();const {env,...rest}=c;return rest;},
   async removeCoworker(id,opts){await services.stopCoworker(id);return cw.remove(id,opts).map(({env,...c})=>c);},
-  async setCoworkerTemplate(id,t){if(id==='main')await job.select(t);else cw.setTemplate(id,t);const {env,...c}=cw.get(id);return c;},
+  async setCoworkerTemplate(id,t){if(id==='main')await job.select(t);else cw.setTemplate(id,t);await applyJob(id);const {env,...c}=cw.get(id);return c;},
   registerCoworkerOnSokosumi:cw.registerOnSokosumi,registerCoworkerPaid:pay.registerCoworker,
   verify:verifyResult,
   env:readEnv,

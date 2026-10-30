@@ -14,7 +14,7 @@ export async function status(){
  const items=[{label:'Template',status:t?'ok':'todo',detail:t?`${t.name}`:'none selected'},
   {label:'Check',status:t?(t.check?.type==='none'?'warn':'ok'):'todo',detail:t?(t.check?.type==='none'?'no check: buyers get no pay-only-if-correct guarantee':`${t.check.type}`):'—'},
   {label:'Tried it',status:tried?'ok':'todo',detail:tried?`${tried.pass?'passed':'failed'} on "${tried.sample}"`:'try a sample before going live'}];
- return {id,title,status:t?'ok':'todo',items,templates:listTemplates().sort((a,b)=>(a.check?.type==='none')-(b.check?.type==='none')).map(({prompt,samples,...m})=>({...m,samples:orderedSamples({samples}).map(s=>({name:s.name,expect:s.expect}))})),active};
+ return {id,title,status:t?'ok':'todo',items,templates:listTemplates().sort((a,b)=>(a.check?.type==='none')-(b.check?.type==='none')).map(({prompt,samples,...m})=>({...m,preview:prompt.trim().split('\n').find(l=>l.trim())?.slice(0,140)??'',samples:orderedSamples({samples}).map(s=>({name:s.name,expect:s.expect}))})),active};
 }
 function safe(f){try{return f()}catch{return null}}
 export async function select(templateId){

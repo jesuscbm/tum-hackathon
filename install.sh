@@ -7,7 +7,7 @@ set -eu
 export NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_FUND=false
 
 NODE_VERSION="v24.22.1"   # pinned; the Masumi payment service needs >= 24.22.1 < 25
-SOKOSUMI_VERSION="1.0.4"  # pinned; the coworker imports its runtime adapter
+SOKOSUMI_VERSION="1.1.0"  # pinned; the coworker imports its runtime adapter (1.0.4 calls a Core route that is gone)
 REPO="${LOKAL_REPO:-jesuscbm/lokAl}"
 REF="${LOKAL_REF:-main}"
 LOKAL_HOME="${LOKAL_HOME:-$HOME/.local/share/lokal}"

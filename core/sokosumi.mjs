@@ -2,7 +2,7 @@ import {spawn} from 'node:child_process';
 import {json,run,which} from './exec.mjs';
 import {log} from './events.mjs';
 // Thin wrapper over the pinned Sokosumi CLI (Preprod). Secrets never touch our logs.
-export const CLI_VERSION='1.0.4';
+export const CLI_VERSION='1.1.0';
 const cli=(args,opts={})=>json('sokosumi',['--preprod',...args,'--json'],{source:'sokosumi',quiet:true,timeout:60000,...opts});
 export async function installed(){
  if(!await which('sokosumi'))return {installed:false};
@@ -59,4 +59,10 @@ export async function createTask({coworkerId,name,description,organizationSlug})
  if(!r.ok)throw new Error(firstLine(r));return r.data.task??r.data;
 }
 export async function getTask(id,organizationSlug){const r=await cli(['tasks','get',id,...(organizationSlug?['--organization-slug',organizationSlug]:[])]);return r.ok?(r.data.task??r.data):null;}
-function firstLine(r){return ((r.stderr||r.stdout||'').trim().split('\n').find(l=>l.trim())||`exit ${r.code}`).slice(0,240);}
+// The CLI prints {"error":"…"} with --json; show the message, not the JSON. A missing route means the CLI is older than Core.
+export function firstLine(r){
+ const raw=(r.stderr||r.stdout||'').trim();let msg=raw.split('\n').find(l=>l.trim())||`exit ${r.code}`;
+ try{const j=JSON.parse(raw);if(typeof j.error==='string')msg=j.error}catch{}
+ if(/route_not_found/.test(msg))return `Sokosumi rejected a request from this CLI version (route not found). Install Sokosumi CLI ${CLI_VERSION}: run the lokAl installer again.`;
+ return msg.replace(/Core API request failed with status (\d+): .*?"message\\?":\\?"([^"\\]+).*/,'Sokosumi API error $1: $2').slice(0,240);
+}

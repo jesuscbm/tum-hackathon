@@ -63,7 +63,7 @@ In a throwaway VM: `uninstall.sh --all` then the curl installer gives a true fro
 ## Style
 Plain ES modules (`.mjs`), Node 24, **no build step**. Ink components use `htm` (`tui/html.mjs`), not JSX.
 Terse code that matches `coworker/*.mjs`; comments only for the non-obvious. Exact-pinned dependencies; add one only
-if it removes real work. Pinned externals: Node `v24.22.1`, Sokosumi CLI `1.0.4`, pnpm `10.30.2`,
+if it removes real work. Pinned externals: Node `v24.22.1`, Sokosumi CLI `1.1.0` (1.0.4 breaks: Core dropped `/v1/users/me/workspace-access`, used by every `--personal` call), pnpm `10.30.2`,
 Masumi Payment Service commit `a846392…` (`pay/mps.mjs`), Ollama `v0.40.13` (`core/runtime/ollama.mjs`), `postgres:16`.
 
 ## Safety rules
