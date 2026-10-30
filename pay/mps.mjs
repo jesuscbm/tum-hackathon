@@ -8,12 +8,13 @@ import {readEnv} from '../core/config.mjs';
 import {node24Bin} from '../core/node24.mjs';
 import {networkOf,NETWORKS} from '../core/network.mjs';
 import {files,mpsUrl,mps,readJson,writeJson,readSecretEnv} from './state.mjs';
-// Masumi Payment Service: our own instance, own Postgres (docker), own wallets. Idempotent phases:
+import * as db from './db.mjs';
+// Masumi Payment Service: our own instance, own Postgres (Docker or native, see db.mjs), own wallets. Idempotent phases:
 //   A (no secrets needed): Postgres, source, pnpm install, migrate
 //   B (needs the Blockfrost preprod key): seed wallets + payment source
 //     The service's seed always needs the preprod key; a mainnet key in addition seeds mainnet wallets too.
 export const MPS_DIR=join(HOME,'masumi-payment-service');
-const DB_NAME=process.env.LOKAL_DB_CONTAINER||'lokal-mps-db',DB_PORT=55432;
+const DB_PORT=db.DB_PORT;
 const PNPM_VERSION='10.30.2'; // the service's packageManager field
 // Pinned commit (tested 2026-10-30). Override with LOKAL_MPS_REF to try a newer one.
 const MPS_REF=process.env.LOKAL_MPS_REF||'a846392ccfc8f5a85aee594ad9441dc90820dab0';
@@ -51,21 +52,21 @@ function writeServiceEnv(s){
   // Default is 300 s: after a restart the old sync lock would block registration for 5 minutes.
   'SYNC_LOCK_TIMEOUT_INTERVAL="30"','OTEL_EXPORTER_OTLP_ENDPOINT=""',''].join('\n'),{mode:0o600});
 }
-async function waitForDb(s){
- for(let i=0;i<30;i++){const r=await run('docker',['exec',DB_NAME,'pg_isready','-U','masumi'],{quiet:true,timeout:10000});if(r.code===0)return;await new Promise(r=>setTimeout(r,1000));}
- throw new Error('Postgres did not become ready');
-}
+// Installs from before db.mjs used Docker and recorded nothing.
+const dbKind=s=>s.LOKAL_DB_BACKEND||(s.LOKAL_PREPARED==='1'?'docker':null);
+const psql=(sql,opts)=>{const s=secrets();return db.psql(dbKind(s),s.LOKAL_DB_PASSWORD,sql,opts);};
+// Before every service start: a native cluster does not come back on its own after a reboot (Docker's does).
+export async function ensureDb(){const s=secrets();const k=dbKind(s);if(k)await db.ensureUp(k,s.LOKAL_DB_PASSWORD);}
+export const dbInfo=()=>{const s=readSecretEnv(files.mpsEnv);return {kind:dbKind(s)};};
 // Phase A. Safe to run before the user has a Blockfrost key.
 export async function prepare(){
- if(!await which('docker'))throw new Error('Docker is needed for the payment database. Install Docker, then retry.');
- if((await run('docker',['info'],{quiet:true,timeout:20000})).code!==0)throw new Error('Docker is installed but not running (or your user cannot use it). Start Docker, then retry.');
  if(!await which('git'))throw new Error('git is needed. Install git, then retry.');
- const s=secrets();saveSecrets(s);
- progress('mps','Starting Postgres (docker)',0.05);
- const ps=await run('docker',['ps','-a','--filter',`name=^${DB_NAME}$`,'--format','{{.Status}}'],{quiet:true});
- if(!ps.stdout.trim())await must(await sh('docker',['run','-d','--name',DB_NAME,'--restart','unless-stopped','-e','POSTGRES_USER=masumi','-e',`POSTGRES_PASSWORD=${s.LOKAL_DB_PASSWORD}`,'-e','POSTGRES_DB=masumi','-p',`127.0.0.1:${DB_PORT}:5432`,'postgres:16'],{timeout:600000}),'docker run postgres');
- else if(!ps.stdout.startsWith('Up'))await must(await sh('docker',['start',DB_NAME]),'docker start');
- await waitForDb(s);
+ const s=secrets();
+ const kind=await db.pick(dbKind(s));
+ if(!kind)throw new Error(await which('docker')?`Docker is installed but not running (or your user cannot use it). Start it, or install ${db.installHint()}.`:`The payment database needs ${db.installHint()}. Install it, then retry.`);
+ saveSecrets({...s,LOKAL_DB_BACKEND:kind});
+ progress('mps',`Starting Postgres (${kind==='docker'?'Docker':'native'})`,0.05);
+ await db.ensureUp(kind,s.LOKAL_DB_PASSWORD);
  progress('mps','Fetching the payment service',0.15);
  if(!existsSync(join(MPS_DIR,'.git'))){
   mkdirSync(MPS_DIR,{recursive:true});
@@ -105,7 +106,7 @@ export async function setup(){const st=await status();if(!st.prepared)await prep
 // registration and payments until it times out, and nobody else can be holding it.
 export async function clearStaleLocks(){
  const sql='UPDATE "PaymentSource" SET "syncInProgress"=false WHERE "syncInProgress"=true; UPDATE "HotWallet" SET "lockedAt"=NULL WHERE "lockedAt" IS NOT NULL AND "pendingTransactionId" IS NULL;';
- const r=await run('docker',['exec',DB_NAME,'psql','-U','masumi','-d','masumi','-qAt','-c',sql],{quiet:true,timeout:20000});
+ const r=await psql(sql);
  if(r.code!==0)log('mps','Could not clear stale locks: '+r.stderr.trim().slice(0,160),'error');
 }
 // Command the supervisor runs to keep the service up.
@@ -115,8 +116,7 @@ export async function command(){if(existsSync(MPS_DIR))writeServiceEnv(secrets()
 // free Blockfrost key) before it registers anything. Our wallets are new, so none of it concerns us: start the
 // sync checkpoint at the contract's newest tx instead. Runs only while the service is stopped.
 export async function skipContractHistory(){
- const psql=sql=>run('docker',['exec',DB_NAME,'psql','-U','masumi','-d','masumi','-qAt','-F','|','-c',sql],{quiet:true,timeout:20000});
- const q=await psql(`SELECT id,"smartContractAddress",network FROM "PaymentSource" WHERE "lastIdentifierChecked" IS NULL AND "deletedAt" IS NULL`);
+ const q=await psql(`SELECT id,"smartContractAddress",network FROM "PaymentSource" WHERE "lastIdentifierChecked" IS NULL AND "deletedAt" IS NULL`,{sep:'|'});
  const env=readEnv();
  for(const line of q.stdout.trim().split('\n').filter(Boolean)){
   const [id,address,network]=line.split('|');

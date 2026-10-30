@@ -57,5 +57,12 @@ export function setupHeadless(){
  }
  return {headless,vault};
 }
+// macOS keeps the Sokosumi CLI's secrets in the login Keychain (no secret-tool to stand in for). Over SSH that
+// Keychain is usually locked until `security unlock-keychain` runs once in the session.
+export async function keychainLocked(){
+ if(process.platform!=='darwin'||!isHeadless())return false;
+ const {spawnSync}=await import('node:child_process');
+ return spawnSync('security',['show-keychain-info'],{encoding:'utf8',timeout:5000}).status!==0;
+}
 // Latest URL the CLI tried to open (headless only), then forget it.
 export function takeOpenedUrl(){try{const u=readFileSync(URL_FILE,'utf8').trim();rmSync(URL_FILE,{force:true});return u||null}catch{return null}}

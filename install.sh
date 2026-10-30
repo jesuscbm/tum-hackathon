@@ -101,7 +101,11 @@ chmod +x "$BIN_DIR/lokal"
 ok "Command: $BIN_DIR/lokal"
 
 # --- optional extras, reported but not required -------------------------------------
-command -v docker >/dev/null 2>&1 && ok "Docker found (used for the payment database)" || warn "Docker not found: needed later for step 4 (payments). https://docs.docker.com/get-docker/"
+# The payment database runs in Docker, or natively with the machine's PostgreSQL (no Docker needed).
+if command -v docker >/dev/null 2>&1; then ok "Docker found (used for the payment database)"
+elif command -v pg_ctl >/dev/null 2>&1 || [ -x /opt/homebrew/opt/postgresql@16/bin/pg_ctl ] || [ -x /usr/local/opt/postgresql@16/bin/pg_ctl ] || ls /usr/lib/postgresql/*/bin/pg_ctl >/dev/null 2>&1; then ok "PostgreSQL found (used for the payment database, no Docker needed)"
+elif [ "$OS" = darwin ]; then warn "For payments (step 4) install PostgreSQL: brew install postgresql@16  (or Docker)"
+else warn "For payments (step 4) install Docker or PostgreSQL (e.g. sudo apt install postgresql). https://docs.docker.com/get-docker/"; fi
 [ "$OS" = linux ] && ! command -v zstd >/dev/null 2>&1 && ! command -v ollama >/dev/null 2>&1 && warn "zstd not found: needed to unpack Ollama (sudo apt install zstd), or install Ollama yourself"
 
 # --- PATH for future shells (marked so uninstall.sh can remove it) ---------------------

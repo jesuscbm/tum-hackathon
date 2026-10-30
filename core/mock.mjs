@@ -31,7 +31,7 @@ export function createMockCore(){
   pay:()=>({id:'pay',title:'Get paid',status:st.pay>=4?'ok':'todo',network:st.net,wallet:{address:st.pay>=1?W:null,balance:st.pay>=2?{ada:10000,usdm:0}:{ada:0,usdm:0},faucet:'https://dispenser.masumi.network/'},items:[
    it('Network',st.net==='preprod'?'ok':'warn',st.net==='preprod'?'Cardano preprod: test ADA and test USDM (press n for mainnet)':'Cardano MAINNET: real ADA and real USDM (press n for preprod)'),
    it('Blockfrost key',st.bf?'ok':'input',st.bf?'set':'free preprod key from blockfrost.io',{input:st.bf?undefined:{key:'BLOCKFROST_API_KEY_PREPROD',label:'Blockfrost preprod project id',secret:true}}),
-   it('Docker','ok','found'),it('Payment service',st.pay>=1,st.pay>=1?'http://127.0.0.1:38127':'lokAl installs your own instance'),
+   it('Database','ok','Docker found: Postgres runs in a container'),it('Payment service',st.pay>=1,st.pay>=1?'http://127.0.0.1:38127':'lokAl installs your own instance'),
    it('Selling wallet',st.pay>=2?'ok':st.pay>=1?'action':'todo',st.pay>=1?`${W.slice(0,20)}…${W.slice(-6)} · ${st.pay>=2?'10000':'0'} tADA`:'created by the payment service',{command:st.pay===1?'https://dispenser.masumi.network/':undefined}),
    it('Registry',st.pay>=3?'ok':'todo',st.pay>=3?'agent 7e8c1b0f9d2a44c1…':'registers your agent on Cardano preprod',{tx:st.pay>=3?'9f2c6a1be0d34c7a8e5f1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6':undefined}),
    it('Paid tasks',st.pay>=4,st.pay>=4?'enabled':'enabled after registration confirms')]}),

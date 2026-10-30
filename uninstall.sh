@@ -31,6 +31,11 @@ if [ -f "$UNIT" ]; then
   systemctl --user disable --now lokald.service >/dev/null 2>&1; rm -f "$UNIT"; systemctl --user daemon-reload >/dev/null 2>&1
   ok "Removed the lokald systemd unit"
 fi
+PLIST="$HOME/Library/LaunchAgents/network.lokal.lokald.plist"
+if [ -f "$PLIST" ]; then
+  launchctl bootout "gui/$(id -u)/network.lokal.lokald" >/dev/null 2>&1 || launchctl unload "$PLIST" >/dev/null 2>&1; rm -f "$PLIST"
+  ok "Removed the lokald launchd agent"
+fi
 [ -x "$BIN_DIR/lokal" ] && "$BIN_DIR/lokal" down >/dev/null 2>&1 && ok "Stopped lokald and its services"
 
 # 1. Stop everything lokal started (all of it runs from inside LOKAL_HOME).
@@ -42,7 +47,10 @@ if [ -n "$PIDS" ]; then
   ok "Stopped lokAl processes (UI, agent, worker, payment service, private Ollama)"
 else skip "No lokAl processes running"; fi
 
-# 2. Payment database container (and its data volume).
+# 2. Payment database: the native cluster (stopped here, deleted with LOKAL_HOME below), or the container.
+if [ -f "$LOKAL_HOME/pgdata/postmaster.pid" ]; then
+  PGPID=$(head -1 "$LOKAL_HOME/pgdata/postmaster.pid"); kill -INT "$PGPID" 2>/dev/null && sleep 2 && ok "Stopped the payment database (PostgreSQL)"
+fi
 if command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$DB"; then
   docker rm -f -v "$DB" >/dev/null 2>&1 && ok "Removed Docker container $DB (payment database)"
 else skip "No payment database container"; fi

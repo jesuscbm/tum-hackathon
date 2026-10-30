@@ -14,8 +14,8 @@ const HELP=`lokAl: your local LLM, hired and paid on Cardano
                      your data: wallet address, agent id, Coworker ids, links, where files live
   lokal up           start the background services (lokald) and follow their logs; Ctrl+C only detaches
   lokal down         stop lokald and every service it runs
-  lokal daemon start|stop|status|logs|enable|run
-                     manage lokald; enable installs a systemd user unit (survives reboots)
+  lokal daemon start|stop|status|logs|enable|disable|run
+                     manage lokald; enable starts it at login and after reboots (systemd on Linux, launchd on macOS)
   lokal run STEP     run one setup step headless (machine, job [id], sokosumi, pay, live)
   lokal model [ollama TAG | api URL [MODEL] | llamacpp [URL]]
                      show or switch the model: any Ollama tag, or any OpenAI-compatible API (key on stdin)
@@ -101,14 +101,29 @@ else if(cmd==='daemon'){
  else if(sub==='start'){const c=await core();await c.startServices();const s=await d.status();console.log(`✔ lokald running (pid ${s.pid})`);process.exit(0);}
  else if(sub==='stop'){console.log(await d.shutdown()?'✔ lokald stopped':'· lokald was not running');process.exit(0);}
  else if(sub==='logs'){const c=await core();if(!(await d.status()).running)die('lokald is not running');followLogs(c);await c.attach();process.on('SIGINT',()=>process.exit(0));setInterval(()=>{},1<<30);}
- else if(sub==='enable'){
-  const {spawnSync}=await import('node:child_process');const {homedir}=await import('node:os');
+ else if(sub==='enable'||sub==='disable'){
+  const {spawnSync}=await import('node:child_process');const {homedir}=await import('node:os');const {existsSync,rmSync}=await import('node:fs');
+  const mac=process.platform==='darwin',f=d.autostartFile(),sh=(c,a)=>spawnSync(c,a,{stdio:'inherit'}).status===0;
+  const uid=process.getuid?.();
+  if(sub==='disable'){
+   if(mac)spawnSync('launchctl',['bootout',`gui/${uid}/${d.LAUNCHD_LABEL}`],{stdio:'ignore'});
+   else spawnSync('systemctl',['--user','disable','--now','lokald.service'],{stdio:'ignore'});
+   if(existsSync(f))rmSync(f);console.log('✔ lokald no longer starts on its own (lokal up still starts it)');process.exit(0);
+  }
   const bin=process.env.LOKAL_BIN||resolve(homedir(),'.local','bin','lokal');
-  const f=d.systemdUnit({lokalBin:bin});console.log(`✔ wrote ${f}`);
-  if(spawnSync('systemctl',['--user','daemon-reload'],{stdio:'inherit'}).status!==0)die('systemctl --user is not available here; use `lokal daemon start` instead');
+  if(!existsSync(bin))die(`${bin} not found: enable works for an installed lokal (install.sh)`);
+  const {setupHeadless}=await import('../core/vault.mjs');setupHeadless(); // the unit's PATH keeps the headless stand-ins
   await d.shutdown();
-  spawnSync('systemctl',['--user','enable','--now','lokald.service'],{stdio:'inherit'});
-  console.log('lokald now starts with your user session. To keep it running after you log out of SSH:\n  sudo loginctl enable-linger $USER');
+  d.writeAutostart({lokalBin:bin});console.log(`✔ wrote ${f}`);
+  if(mac){
+   spawnSync('launchctl',['bootout',`gui/${uid}/${d.LAUNCHD_LABEL}`],{stdio:'ignore'});
+   if(!sh('launchctl',['bootstrap',`gui/${uid}`,f])&&!sh('launchctl',['load','-w',f]))die('launchctl could not load it; run `lokal daemon start` instead');
+   console.log('lokald now starts when you log in to this Mac, and restarts if it crashes.');
+  }else{
+   if(!sh('systemctl',['--user','daemon-reload']))die('systemctl --user is not available here; use `lokal daemon start` instead');
+   sh('systemctl',['--user','enable','--now','lokald.service']);
+   console.log('lokald now starts with your user session. To keep it running after you log out of SSH:\n  sudo loginctl enable-linger $USER');
+  }
   process.exit(0);
  }
  else{const s=await d.status();console.log(s.running?`✔ lokald running (pid ${s.pid}, since ${new Date(s.startedAt).toLocaleString()})\n${s.services.map(x=>`   ${ICON[x.status==='running'?'ok':x.status==='failed'?'fail':'todo']} ${x.id.padEnd(16)} ${x.status}${x.pid?` pid ${x.pid}`:''}`).join('\n')}`:'· lokald not running');process.exit(0);}

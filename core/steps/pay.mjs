@@ -4,6 +4,7 @@ import {which} from '../exec.mjs';
 import * as sk from '../sokosumi.mjs';
 import {readEnv,writeEnv} from '../config.mjs';
 import * as mps from '../../pay/mps.mjs';
+import * as db from '../../pay/db.mjs';
 import * as reg from '../../pay/register.mjs';
 import {wallet,requestTestAda} from '../../pay/wallet.mjs';
 import {loadConfig,saveConfig} from '../config.mjs';
@@ -22,7 +23,8 @@ function bfItem(net,k){
 }
 export async function status(){
  const env=readEnv();const net=networkOf(env);
- const [docker,m,w]=await Promise.all([which('docker'),mps.status(),wallet()]);
+ const [docker,native,m,w]=await Promise.all([which('docker'),db.nativeBin(),mps.status(),wallet()]);
+ const kind=mps.dbInfo().kind;
  // While a registration is pending, refresh it from the registry at most every 20 s (the UI polls status()).
  let r=reg.status();
  if(r.registered&&!r.confirmed&&Date.now()-lastPoll>20000){lastPoll=Date.now();r=await reg.poll().catch(()=>r);}
@@ -32,7 +34,7 @@ export async function status(){
   bfItem(NETWORKS.preprod,env.BLOCKFROST_API_KEY_PREPROD),
   ...(net.test?[]:[bfItem(net,env.BLOCKFROST_API_KEY_MAINNET)]),
   {label:'Author name',status:env.AGENT_AUTHOR?'ok':'todo',detail:env.AGENT_AUTHOR||'defaults to your Sokosumi Vendor name (public on the registry)'},
-  {label:'Docker',status:docker?'ok':'action',detail:docker?'found':'needed for the payment database',command:docker?undefined:'https://docs.docker.com/get-docker/'},
+  {label:'Database',status:kind||docker||native?'ok':'action',detail:kind==='native'?`PostgreSQL in ${db.PGDATA}`:kind==='docker'?`Docker container ${db.DB_NAME}`:docker?'Docker found: Postgres runs in a container':native?`PostgreSQL found (${native}): runs a private copy, no Docker needed`:`needs ${db.installHint()}`,command:kind||docker||native?undefined:db.installHint()},
   {label:'Payment service',status:m.up?'ok':'todo',detail:m.up?m.url:m.installed?'installed, not running':m.prepared?'prepared; wallets are created once the Blockfrost key is set':'lokAl installs your own instance (Postgres in Docker)'},
   {label:'Selling wallet',status:w.address?(funded?'ok':'action'):'todo',detail:w.address?`${w.address.slice(0,20)}…${w.address.slice(-6)} · ${w.balance?`${w.balance.ada} ${net.coin}`:w.error??'balance unknown'}${!funded&&!net.test?' · send ≥ 5 ADA to it (lokal info)':''}`:'created by the payment service',command:w.address&&!funded?(w.faucet??w.explorer):undefined},
   // Mainnet buyers reach the agent through the registry's apiBaseUrl, which must be public.

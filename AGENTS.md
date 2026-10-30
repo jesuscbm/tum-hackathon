@@ -111,6 +111,11 @@ Written, not yet run for real:
 5. Polish: `lokal doctor` false "model down" for cloud endpoints; long statuses wrap in the job list; llama.cpp install.
 
 ## Known gotchas
+- Payment DB backend (`pay/db.mjs`) is recorded once as `LOKAL_DB_BACKEND` in `.local/mps.env` (installs without it are
+  Docker). Native = `$LOKAL_HOME/pgdata`, TCP 127.0.0.1:55432 only; the supervisor runs `mps.ensureDb()` before the
+  payment service starts (a native cluster does not restart itself after a reboot). Tested in the postgres:16 image.
+- macOS: the Sokosumi CLI uses the Keychain natively (no `secret-tool` stand-in possible); over SSH it must be unlocked.
+  `lokal daemon enable` writes `~/Library/LaunchAgents/network.lokal.lokald.plist`. Never run on a real Mac yet.
 - Unix socket paths max ~107 bytes (deep scratch `LOKAL_HOME`s fall back to `$XDG_RUNTIME_DIR`).
 - Extra Coworkers run code through symlinks: main-module checks must compare realpaths (`coworker/start.mjs`), and
   Eve only treats a real `package.json` file as its project marker.

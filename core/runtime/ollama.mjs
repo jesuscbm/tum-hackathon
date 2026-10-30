@@ -39,8 +39,9 @@ export async function install(){
  body.on('data',c=>{got+=c.length;const pct=total?got/total:0;if(pct-last>0.01){last=pct;progress('ollama-install',`Downloading Ollama ${(got/2**20).toFixed(0)} / ${(total/2**20).toFixed(0)} MB`,pct)}});
  await pipeline(body,createWriteStream(file));
  progress('ollama-install','Unpacking',1);
- const r=await run('tar',[asset.endsWith('.zst')?'--zstd':'-z','-xf',file,'-C',plat==='darwin'?join(PRIVATE,'bin'):PRIVATE],{timeout:600000,source:'ollama'});
+ // The macOS archive is flat (ollama + its libraries side by side); the Linux one already has bin/ and lib/.
  if(plat==='darwin')mkdirSync(join(PRIVATE,'bin'),{recursive:true});
+ const r=await run('tar',[asset.endsWith('.zst')?'--zstd':'-z','-xf',file,'-C',plat==='darwin'?join(PRIVATE,'bin'):PRIVATE],{timeout:600000,source:'ollama'});
  if(r.code!==0)throw new Error('Unpacking Ollama failed: '+r.stderr.slice(0,200));
  await run('rm',['-f',file],{quiet:true});
  return detect();

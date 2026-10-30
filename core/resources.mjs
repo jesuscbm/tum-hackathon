@@ -9,14 +9,23 @@ function cpuPct(){
  if(!p||t.total===p.total)return null;
  return Math.max(0,Math.min(100,100*(1-(t.idle-p.idle)/(t.total-p.total))));
 }
-function ram(){
+// freemem() leaves out reclaimable cache, so RAM would look nearly full: Linux reports MemAvailable, macOS's
+// vm_stat counts free + inactive + speculative + purgeable pages (what Activity Monitor treats as available).
+export function availableFromVmStat(text){
+ const page=Number(text.match(/page size of (\d+) bytes/)?.[1]);if(!page)return null;
+ const n=k=>Number(text.match(new RegExp(`Pages ${k}:\\s+(\\d+)`))?.[1]??0);
+ return (n('free')+n('inactive')+n('speculative')+n('purgeable'))*page;
+}
+async function ram(){
  const total=os.totalmem();let avail=os.freemem();
- // Linux: MemAvailable counts reclaimable cache, which freemem() does not.
  try{const m=readFileSync('/proc/meminfo','utf8').match(/MemAvailable:\s+(\d+)/);if(m)avail=Number(m[1])*1024}catch{}
+ if(process.platform==='darwin'){const r=await run('vm_stat',[],{quiet:true,timeout:3000});const a=availableFromVmStat(r.stdout);if(a)avail=Math.min(total,a);}
  return {usedGB:+((total-avail)/2**30).toFixed(1),totalGB:+(total/2**30).toFixed(1),pct:100*(total-avail)/total};
 }
 let smi;
+// Apple Silicon: the GPU shares RAM and its load needs `sudo powermetrics`, so it is named without a meter.
 async function gpu(){
+ if(process.platform==='darwin'&&process.arch==='arm64')return {name:`${os.cpus()[0]?.model?.trim()||'Apple Silicon'} GPU`,unified:true};
  smi??=await which('nvidia-smi');
  if(!smi)return null;
  const r=await run(smi,['--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu','--format=csv,noheader,nounits'],{quiet:true,timeout:4000});
@@ -38,6 +47,6 @@ async function procs(groups){
 export async function resources(serviceList=[]){
  const groups={};
  for(const s of serviceList)if(s.pid){const k=s.kind??s.id;(groups[k]??=[]).push(s.pid);}
- const [g,p]=await Promise.all([gpu().catch(()=>null),procs(groups).catch(()=>({}))]);
- return {at:Date.now(),cpu:{pct:cpuPct(),cores:os.cpus().length,load:os.loadavg()[0]},ram:ram(),gpu:g,procs:p};
+ const [g,p,m]=await Promise.all([gpu().catch(()=>null),procs(groups).catch(()=>({})),ram()]);
+ return {at:Date.now(),cpu:{pct:cpuPct(),cores:os.cpus().length,load:os.loadavg()[0]},ram:m,gpu:g,procs:p};
 }

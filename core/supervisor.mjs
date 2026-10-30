@@ -12,7 +12,7 @@ const KINDS={
  worker:{label:'Worker',cmd:c=>({cmd:process.execPath,args:[...ENVF,'worker.mjs']}),probe:async c=>{const f=join(c.dir,'.local','worker.lock');if(!existsSync(f))return false;try{process.kill(Number(readFileSync(f,'utf8')),0);return true}catch{return false}}},
  api:{label:'Agent API (MIP-003)',paidOnly:true,cmd:c=>({cmd:process.execPath,args:[...ENVF,'--env-file-if-exists=.local/mps-runtime.env','agent-api.mjs']}),probe:async c=>{try{return (await fetch(`http://127.0.0.1:${c.ports.api}/availability`,{signal:AbortSignal.timeout(1500)})).ok}catch{return false}}},
 };
-const MPS={label:'Payment service',preStart:async()=>{await mps.clearStaleLocks();await mps.skipContractHistory()},cmd:()=>mps.command(),probe:()=>mps.health()};
+const MPS={label:'Payment service',preStart:async()=>{await mps.ensureDb();await mps.clearStaleLocks();await mps.skipContractHistory()},cmd:()=>mps.command(),probe:()=>mps.health()};
 export const serviceId=(kind,c)=>c.primary?kind:`${kind}@${c.id}`;
 function resolve(id){
  if(id==='mps')return {...MPS,id,kind:'mps',coworker:null};

@@ -98,13 +98,30 @@ export async function serve({sup,autostart=true}){
  if(autostart)sup.startAll().catch(e=>log('lokald',e.message,'error'));
  return {stop};
 }
-// systemd --user unit so lokald also comes back after a reboot. Linger keeps it running without a login session.
-export function systemdUnit({lokalBin}){
- const dir=join(process.env.XDG_CONFIG_HOME||join(homedir(),'.config'),'systemd','user');
- mkdirSync(dir,{recursive:true});
- const file=join(dir,'lokald.service');
- writeFileSync(file,`[Unit]\nDescription=lokAl: local LLM agent services (Sokosumi + Masumi)\nAfter=network-online.target\n\n[Service]\nExecStart=${lokalBin} daemon run\nRestart=on-failure\nRestartSec=5\nKillMode=mixed\nTimeoutStopSec=30\n\n[Install]\nWantedBy=default.target\n`);
- return file;
+// Start lokald with the user session (and after reboots): a systemd user unit on Linux, a launchd agent on macOS.
+// Both get this shell's PATH, since service managers start with a minimal one (no Docker, Homebrew or Ollama).
+const XML=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+export const LAUNCHD_LABEL='network.lokal.lokald';
+export function autostartFile(){
+ return process.platform==='darwin'?join(homedir(),'Library','LaunchAgents',`${LAUNCHD_LABEL}.plist`)
+  :join(process.env.XDG_CONFIG_HOME||join(homedir(),'.config'),'systemd','user','lokald.service');
 }
+export function autostartUnit({lokalBin,path=process.env.PATH,home=HOME,platform=process.platform}){
+ if(platform==='darwin')return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+ <key>Label</key><string>${LAUNCHD_LABEL}</string>
+ <key>ProgramArguments</key><array><string>${XML(lokalBin)}</string><string>daemon</string><string>run</string></array>
+ <key>EnvironmentVariables</key><dict><key>PATH</key><string>${XML(path)}</string><key>LOKAL_HOME</key><string>${XML(home)}</string></dict>
+ <key>RunAtLoad</key><true/>
+ <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+ <key>ExitTimeOut</key><integer>30</integer>
+ <key>StandardOutPath</key><string>${XML(join(LOGS,'lokald.log'))}</string>
+ <key>StandardErrorPath</key><string>${XML(join(LOGS,'lokald.log'))}</string>
+</dict></plist>
+`;
+ return `[Unit]\nDescription=lokAl: local LLM agent services (Sokosumi + Masumi)\nAfter=network-online.target\n\n[Service]\nExecStart=${lokalBin} daemon run\nEnvironment="PATH=${path}"\nEnvironment="LOKAL_HOME=${home}"\nRestart=on-failure\nRestartSec=5\nKillMode=mixed\nTimeoutStopSec=30\n\n[Install]\nWantedBy=default.target\n`;
+}
+export function writeAutostart(opts){const f=autostartFile();mkdirSync(join(f,'..'),{recursive:true});writeFileSync(f,autostartUnit(opts));return f;}
 export const pidFile=PIDF;
 export const readPid=()=>{try{return Number(readFileSync(PIDF(),'utf8'))}catch{return null}};

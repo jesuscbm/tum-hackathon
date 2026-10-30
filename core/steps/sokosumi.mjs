@@ -1,7 +1,7 @@
 import * as sk from '../sokosumi.mjs';
 import {loadConfig,saveConfig,readEnv,writeEnv} from '../config.mjs';
 import {log} from '../events.mjs';
-import {isHeadless,takeOpenedUrl} from '../vault.mjs';
+import {isHeadless,takeOpenedUrl,keychainLocked} from '../vault.mjs';
 import {hostname,userInfo} from 'node:os';
 // Step 3: account → Vendor → Coworker → runtime key → Workspace. Reuses whatever already exists.
 export const id='sokosumi',title='Connect Sokosumi';
@@ -18,6 +18,7 @@ export async function status(){
  const env=readEnv(),cfg=loadConfig();
  const items=[{label:'Sokosumi CLI',status:cli.installed?(cli.pinned?'ok':'warn'):'todo',detail:cli.installed?`v${cli.version}${cli.pinned?'':` (lokAl is tested with ${sk.CLI_VERSION})`}`:`installed by the lokal installer (npm i -g @masumi_network/sokosumi@${sk.CLI_VERSION})`}];
  if(!cli.installed)return {id,title,status:'todo',items};
+ if(await keychainLocked())items.push({label:'Keychain',status:'action',detail:'macOS over SSH: run `security unlock-keychain` once per session so the Sokosumi CLI can keep its keys',command:'security unlock-keychain'});
  const user=await sk.whoami();
  const headless=isHeadless();
  const url=takeOpenedUrl();if(url){signIn={url,at:Date.now()};log('sokosumi',`Sign-in link: ${url}`);}

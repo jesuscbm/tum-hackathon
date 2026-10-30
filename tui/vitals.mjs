@@ -41,8 +41,8 @@ export function Resources({res,hist}){
  return html`<${Box} flexDirection="column">
   <${Text}><${Text} color=${C.dim}>CPU  </${Text}><${Text} color=${C.accent2}>${spark(hist.cpu)}</${Text}> <${Text} color=${C.text}>${res.cpu.pct==null?'…':Math.round(res.cpu.pct)+'%'}</${Text}><${Text} color=${C.dim}> of ${res.cpu.cores} cores</${Text}></${Text}>
   <${Meter} label="RAM" pct=${res.ram.pct} text=${`${res.ram.usedGB}/${res.ram.totalGB} GB`}/>
-  ${res.gpu?html`<${Meter} label="GPU" pct=${res.gpu.pct} text=${`${Math.round(res.gpu.pct)}% · ${res.gpu.tempC}°C`}/>`:null}
-  ${res.gpu?html`<${Meter} label="VRAM" pct=${res.gpu.vramPct} text=${`${res.gpu.vramUsedGB}/${res.gpu.vramGB} GB`}/>`:html`<${Text} color=${C.dim}>GPU  none detected (CPU inference)</${Text}>`}
+  ${res.gpu?.unified?html`<${Text} color=${C.dim}>GPU  ${res.gpu.name} · shares the RAM above</${Text}>`:res.gpu?html`<${Meter} label="GPU" pct=${res.gpu.pct} text=${`${Math.round(res.gpu.pct)}% · ${res.gpu.tempC}°C`}/>`:null}
+  ${res.gpu?.unified?null:res.gpu?html`<${Meter} label="VRAM" pct=${res.gpu.vramPct} text=${`${res.gpu.vramUsedGB}/${res.gpu.vramGB} GB`}/>`:html`<${Text} color=${C.dim}>GPU  none detected (CPU inference)</${Text}>`}
   <${Text} color=${C.dim} wrap="truncate-end">${procs.length?procs.map(([k,v])=>`${k} ${Math.round(v.cpu)}% ${fmtMem(v.memMB)}`).join(' · '):'no lokAl processes running'}</${Text}>
  </${Box}>`;
 }

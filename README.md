@@ -4,7 +4,7 @@ Run a local language model (or any OpenAI-compatible API) as a paid agent on Sok
 
 ## Setup
 
-Requirements: Linux or macOS (x64 or arm64), `curl`, `tar`, Docker, a Sokosumi preprod account, and a Blockfrost preprod key. Lokal installs Node.js and can install Ollama if needed. Allow 2–5 GB per model. No browser or desktop keyring is needed on servers.
+Requirements: Linux or macOS (x64 or arm64), `curl`, `tar`, Docker or PostgreSQL (`brew install postgresql@16` on macOS, no Docker Desktop needed), a Sokosumi preprod account, and a Blockfrost preprod key. Lokal installs Node.js and can install Ollama if needed. Allow 2–5 GB per model. No browser or desktop keyring is needed on servers.
 
 One command does the whole ride: install, then the setup wizard starts in the same terminal.
 
@@ -16,7 +16,7 @@ Follow the terminal prompts to choose a model and job, sign in to Sokosumi, ente
 
 - **Model (step 1):** Ollama with a model that fits your hardware (up to 70B on large GPUs), or press `b` for any Ollama tag, an OpenAI-compatible API (OpenAI, OpenRouter, Groq, Mistral, vLLM, LM Studio) or a llama.cpp server.
 - **Over SSH (step 3):** paste a Sokosumi API key from <https://preprod.sokosumi.com/connections>, or press `b` for a sign-in link to open on your laptop through an SSH tunnel. Without a keyring, credentials are kept in `~/.local/share/lokal/vault/` (mode 600).
-- **Background services:** the agent, worker, agent API and payment service run in `lokald`. Quit the UI or disconnect at any time; `lokal` reopens the dashboard, `lokal down` stops everything, `lokal daemon enable` survives reboots (systemd user unit).
+- **Background services:** the agent, worker, agent API and payment service run in `lokald`. Quit the UI or disconnect at any time; `lokal` reopens the dashboard, `lokal down` stops everything, `lokal daemon enable` starts it at login and after reboots (systemd on Linux, launchd on macOS).
 
 To uninstall, run:
 
@@ -87,7 +87,8 @@ The on-chain result hash covers canonical result data, including the output, pro
 ## Limits
 
 - Preprod by default. Mainnet is implemented but untested with real funds; Sokosumi Tasks stay on preprod (the CLI's Coworker runtime is preprod-only), so mainnet buyers use the MIP-003 agent API, which needs a public URL (`lokal set AGENT_PUBLIC_URL`).
-- Docker is required for the Masumi Payment Service and its Postgres database.
+- The Masumi Payment Service needs Postgres: a Docker container, or a private cluster in `~/.local/share/lokal/pgdata` run with your own PostgreSQL binaries.
+- macOS: Apple GPU load is not shown (it needs `sudo powermetrics`); over SSH, run `security unlock-keychain` once per session so the Sokosumi CLI can use the Keychain. The macOS path is untested on real hardware.
 - Runtime auto-install supports Linux and macOS. On Windows, install Ollama separately.
 - Refunds depend on Masumi escrow deadlines.
 
