@@ -55,9 +55,9 @@ createServer(async(req,res)=>{
  job.payment=payment;job.phase='waiting-payment';job.response={id:job.id,input_hash:job.inputHash,identifierFromPurchaser:nonce,blockchainIdentifier:payment.blockchainIdentifier,agentIdentifier:reg.agentIdentifier,sellerVKey:reg.sellerVkey,paymentSourceType:'Web3CardanoV2',supportedPaymentSourceIndex:reg.supportedPaymentSourceIndex,payByTime:Number(payment.payByTime),submitResultTime:Number(payment.submitResultTime),unlockTime:Number(payment.unlockTime),externalDisputeUnlockTime:Number(payment.externalDisputeUnlockTime)};save(job);return respond(res,200,job.response);
  }catch(e){respond(res,500,{error:'Request failed. Inspect the saved job state before retrying.'})}
 }).listen(port,process.env.AGENT_API_HOST||'127.0.0.1',()=>console.log('Agent API running',port));
-let busy=false;
+let polling=false;
 setInterval(async()=>{
- if(busy)return;busy=true;
+ if(polling)return;polling=true;
  try{for(const file of readdirSync(jobsDir).filter(x=>/^[0-9a-f-]{36}\.json$/.test(x))){
  const job=load(file.replace('.json',''));try{
  if(!['waiting-payment','awaiting-result'].includes(job.phase))continue;
@@ -75,5 +75,5 @@ setInterval(async()=>{
  await mps('/payment/submit-result',{network:net.mps,blockchainIdentifier:payment.blockchainIdentifier,submitResultHash:job.resultHash});
  job.phase='awaiting-result';save(job);
  }catch(e){console.error('Standard job needs inspection',job.id)}
- }}finally{busy=false}
+ }}finally{polling=false}
 },5000);
