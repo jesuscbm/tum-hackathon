@@ -12,9 +12,10 @@ import {Wizard} from './scenes/Wizard.jsx';
 import {Flow} from './scenes/Flow.jsx';
 import {Gate} from './scenes/Gate.jsx';
 import {LiveDemo} from './scenes/LiveDemo.jsx';
+import {Proof} from './scenes/Proof.jsx';
 import {Outro} from './scenes/Outro.jsx';
 
-const PARTS={intro:Intro,chaos:Chaos,command:Command,wizard:Wizard,flow:Flow,gate:Gate,demo:LiveDemo,outro:Outro};
+const PARTS={intro:Intro,chaos:Chaos,command:Command,wizard:Wizard,flow:Flow,gate:Gate,demo:LiveDemo,proof:Proof,outro:Outro};
 // Crossfade length. Every scene but the last runs T frames longer than its slot, so scene starts stay where
 // script.mjs puts them and the voice-over timings don't move.
 const T=20,timing=linearTiming({durationInFrames:T,easing:Easing.inOut(Easing.cubic)}),crossfade=fade({shouldFadeOutExitingScene:true});

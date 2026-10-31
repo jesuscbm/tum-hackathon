@@ -1,7 +1,8 @@
 # lokAl demo video
 
-A 2:30 pitch video in an 8-bit style, made with [Remotion](https://www.remotion.dev) (React → mp4): 90 s of animation
-around a 60 s slot for the live demo recording. A pixel-art narrator (generated from a photo) talks over it.
+A 2:30 pitch video in an 8-bit style, made with [Remotion](https://www.remotion.dev) (React → mp4): 20 s of who and why,
+a 90 s slot for the live demo recording, 30 s of on-chain proof and 10 s of what comes next.
+A pixel-art narrator (generated from a photo) talks over it.
 On screen the product is branded **lokAl** (`Brand` in `src/lib.jsx`), including the typed command and the install link
 (`jesuscbm/lokAl`), which assumes the repo is renamed and the CLI answers to `lokAl`.
 This folder is separate from lokal itself; nothing here is installed or tested by CI.
@@ -16,20 +17,22 @@ npm run script          # → VOICEOVER.md (lines + timecodes for recording)
 
 | Time | Scene | What happens |
 |---|---|---|
-| 0:00 | intro | the narrator rises into frame and says hi |
-| 0:08 | chaos | Masumi, Sokosumi, x402, Blockfrost, Cardano + a dozen chores → "20 HOURS LATER..." time card |
-| 0:24 | command | CONTINUE? → the real `curl … \| sh` and installer output → `lokAl` |
-| 0:34 | wizard | the five TUI steps; each integration lights up as it gets wired |
-| 0:56 | flow | buyer → Masumi escrow → your model → check → paid, with a job card |
-| 1:12 | gate | PASS gets paid, FAIL is never submitted; provenance hash |
-| 1:23 | demo | **60 s live demo slot** (placeholder until you add the recording); the narrator talks over it |
-| 2:23 | outro | logo, tagline, install command |
+| 0:00 | intro | who uses it: the narrator rises, WHO SELLS (laptop, gaming PC, server) and WHO BUYS (teams, agents on Sokosumi) |
+| 0:12 | chaos | the problem: Masumi, Sokosumi, Blockfrost, Cardano + a dozen chores → "20 HOURS LATER..." → CONTINUE? YES |
+| 0:20 | demo | **90 s live demo slot** (placeholder until you add the recording), chapter rail on the left, narrator talks over it |
+| 1:50 | proof | on Cardano preprod: the four real transactions, the Masumi escrow contract and its datum, the `lokal verify` tamper test |
+| 2:20 | outro | what's next (mainnet, more jobs, agents hiring agents, proven weights), logo, install command |
 
 Scenes crossfade into each other (`T` in `src/Demo.jsx`). Order and lengths are in `src/script.mjs` (`ORDER`); voice-over
-lines are relative to their scene, so moving the demo slot keeps everything in sync.
+lines are relative to their scene, so moving the demo slot keeps everything in sync. The animated `command`, `wizard`,
+`flow` and `gate` scenes are not in `ORDER` any more; add one back (and shorten `demo` by as much) to use it as a cutaway.
 
-- **Live demo:** put the recording in `public/live-demo.mp4`, then
-  `npm run render -- --props='{"demo":"live-demo.mp4"}'`. Its own audio is kept.
+- **Live demo:** put the recording (90 s) in `public/live-demo.mp4`, then
+  `npm run render -- --props='{"demo":"live-demo.mp4"}'`. Its own audio is kept. Move `CHAPTERS` in `src/script.mjs` so
+  the rail matches the recording.
+- **Proof:** `src/scenes/Proof.jsx` shows the paid job from `docs/evidence.md`. Hashes, blocks, the contract address and the
+  datum fields were read from preprod; the tampered hash in the last line is illustrative (it depends on the exact result
+  text). For a new job, replace `TX`, `CONTRACT` and `RESULT`.
 - **Voice-over:** record each line from `VOICEOVER.md` inside its time window and drop it on the timeline
   in CapCut/Resolve. The narrator's mouth moves only inside those windows. The demo-slot lines are suggestions:
   rewrite them in `src/script.mjs` to match your recording.

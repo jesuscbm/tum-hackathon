@@ -2,34 +2,38 @@
 // Plain JS so scripts/vo-script.mjs can print the voice-over sheet from it.
 export const FPS=30,W=1920,H=1080;
 
-// Scene order = playback order; each scene keeps its length if you move it. `demo` is the 60 s live-demo slot.
-const ORDER=[['intro',240],['chaos',480],['command',300],['wizard',660],['flow',480],['gate',330],['demo',1800],['outro',210]];
+// Scene order = playback order; each scene keeps its length if you move it.
+// 0:00 who + problem · 0:20 live demo (90 s slot) · 1:50 proof on Cardano · 2:20 what's next.
+// command, wizard, flow and gate (src/scenes) are animated cutaways you can put back in here.
+const ORDER=[['intro',360],['chaos',240],['demo',2700],['proof',900],['outro',300]];
 export const SCENES={};
 let t=0;for(const [id,len] of ORDER){SCENES[id]=[t,t+len];t+=len}
 export const DURATION=t;
 
 // Frames are relative to the start of the scene.
 const SCRIPT=[
- ['intro',30,225,'happy',"Hi! I run an AI model on my own laptop, and I'd love to get paid for its work."],
- ['chaos',15,240,'stressed','But getting paid means Masumi, Sokosumi, x402, Blockfrost and Cardano. Wallets, keys, databases...'],
- ['chaos',250,465,'stressed',"That's a dozen manual steps. Twenty hours later, I still haven't been paid."],
- ['command',15,285,'happy','lokAl makes it one command. Paste it, type lokAl, and a friendly terminal walks you through the rest.'],
- ['wizard',15,300,'normal','It checks your hardware, installs Ollama and downloads a model that fits. Then you pick a job.'],
- ['wizard',310,645,'happy',"It connects Sokosumi, sets up your Masumi wallet with Blockfrost and registers you on Cardano. You're live!"],
- ['flow',15,240,'normal','A buyer hires my agent on Sokosumi. The payment is locked in Masumi escrow on Cardano.'],
- ['flow',250,470,'normal','My model does the work right here on my laptop. Then a check runs before anyone gets paid.'],
- ['gate',15,160,'happy','Pass, and the result hash goes on-chain. I get paid.'],
- ['gate',170,320,'normal',"Fail, and nothing is submitted, so the buyer isn't charged. And the hash proves which model did the work."],
+ ['intro',24,174,'happy','Hi! My laptop runs an open AI model, like millions of others.'],
+ ['intro',182,352,'normal','Teams need small AI jobs done, and want to pay only for good results.'],
+ ['chaos',6,226,'stressed','But selling on Cardano means Masumi, Sokosumi, Blockfrost, wallets, keys and a database. Twenty hours later: not paid.'],
  // Live demo slot: suggested narration, rewrite it to match the recording. The narrator's mouth follows these windows.
- ['demo',15,270,'happy',"Here's the real thing: a fresh laptop and one curl command."],
- ['demo',290,570,'normal','lokAl checks my hardware, installs Ollama and pulls Llama 3.2. Everything runs locally.'],
- ['demo',590,870,'normal','I pick the invoice-to-JSON job and try a sample. The check passes.'],
- ['demo',890,1170,'normal','Sokosumi and my own Masumi payment service get wired up, and the agent is registered on Cardano preprod.'],
- ['demo',1190,1470,'happy','Now a buyer sends a paid job: escrow locked, answered, check passed, paid.'],
- ['demo',1490,1770,'happy','And here is the transaction on Cardanoscan. Twenty hours of setup, now one command.'],
- ['outro',20,190,'wink','lokAl. Your model, paid, with one command.'],
+ ['demo',15,255,'happy','lokAl fixes that with one command. A fresh laptop: paste the curl line, then type lokAl.'],
+ ['demo',275,555,'normal','Step one checks my hardware, installs Ollama and pulls Llama 3.2. Everything runs locally.'],
+ ['demo',575,855,'normal','Step two: I pick the invoice-to-JSON job. It comes with a check, and I try it on samples.'],
+ ['demo',875,1155,'normal','Step three connects my Sokosumi account and creates my Coworker.'],
+ ['demo',1175,1455,'normal','Step four installs my own Masumi payment service, gets test ADA and registers the agent on Cardano.'],
+ ['demo',1475,1755,'happy',"I'm live. A buyer hires my agent on Sokosumi and locks one USDM in the escrow."],
+ ['demo',1775,2055,'normal','My model answers right here. The check passes, so the result hash goes on-chain.'],
+ ['demo',2075,2355,'normal','Had it failed, nothing would be submitted, and the buyer could take the money back.'],
+ ['demo',2375,2680,'happy','Escrow released: paid. One curl command to a paid job.'],
+ ['proof',15,285,'normal','The proof is on Cardanoscan: agent registered, funds locked, result submitted, and withdrawn to my wallet.'],
+ ['proof',305,585,'normal',"The money never sat with me. It waited in Masumi's escrow contract, next to my result hash."],
+ ['proof',605,885,'happy','Tamper test: the result matches the on-chain hash. Claim a bigger model, and verification fails.'],
+ ['outro',12,290,'wink','Next: mainnet, more jobs, and agents hiring local agents. lokAl: your model, paid, with one command.'],
 ];
 export const LINES=SCRIPT.map(([scene,from,to,mood,text])=>({scene,from:SCENES[scene][0]+from,to:SCENES[scene][0]+to,mood,text}));
 export const lineAt=f=>LINES.find(l=>f>=l.from&&f<l.to);
+
+// Chapter rail next to the live demo, frames relative to the demo start. Move them to match the recording.
+export const CHAPTERS=[[0,'install'],[275,'1 machine & model'],[575,'2 job + check'],[875,'3 Sokosumi'],[1175,'4 payments'],[1475,'5 paid job']];
 
 export const INSTALL='curl -fsSL https://raw.githubusercontent.com/jesuscbm/lokAl/main/install.sh | sh';
