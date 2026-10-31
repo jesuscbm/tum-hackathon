@@ -19,7 +19,7 @@ npm run script          # → VOICEOVER.md (lines + timecodes for recording)
 |---|---|---|
 | 0:00 | intro | who uses it: the narrator rises, WHO SELLS (laptop, gaming PC, server) and WHO BUYS (teams, agents on Sokosumi) |
 | 0:12 | chaos | the problem: Masumi, Sokosumi, Blockfrost, Cardano + a dozen chores → "20 HOURS LATER..." → CONTINUE? YES |
-| 0:20 | demo | **90 s live demo slot** (placeholder until you add the recording), chapter rail on the left, narrator talks over it |
+| 0:20 | demo | **90 s live demo** (`public/live-demo.mp4`, a 25 min run cut down; placeholder without it), chapter rail on the left, narrator talks over it |
 | 1:50 | proof | on Cardano preprod: the four real transactions, the Masumi escrow contract and its datum, the `lokal verify` tamper test |
 | 2:20 | outro | what's next (mainnet, more jobs, agents hiring agents, proven weights), logo, install command |
 
