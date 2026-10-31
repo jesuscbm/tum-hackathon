@@ -6,7 +6,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 echo "== install into $T"
-HOME="$T" LOKAL_SRC="$ROOT" LOKAL_NO_START=1 sh "$ROOT/install.sh"
+HOME="$T" LOKAL_SRC="$ROOT" LOKAL_NO_START=1 LOKAL_DOCKER=no sh "$ROOT/install.sh"
 L="$T/.local/bin/lokal"
 echo "== lokal --help";        HOME="$T" "$L" --help >/dev/null
 echo "== lokal status --mock"; HOME="$T" "$L" status --mock | grep -q "Your machine & model"

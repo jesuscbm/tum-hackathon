@@ -47,6 +47,19 @@ node -e "const t=require('fs').readFileSync(process.argv[1],'utf8');console.log(
 
 Then compare the printed hex with the on-chain `resultHash`.
 
+Results bought through the agent API (MIP-003, `lokal buy`) hash `nonce;text`, where the nonce is the
+buyer's `identifierFromPurchaser`: add `--nonce HEX` (`lokal buy` prints the whole command).
+
+**Don't trust the seller's check, re-run it.** The verdict inside the result is the seller's claim. Add
+`--recheck` to run the job's check on the output yourself and compare. A seller who committed "pass" on a
+failing result is caught here, with the on-chain hash as proof. It also tells you whether the prompt hash
+matches the published job:
+
+```sh
+lokal verify result.json <expected-hash> --recheck
+# ✖ check re-run here: invoice fails (the seller claimed pass, the check says fail: $.total: 9 ≠ line items + tax = 3)
+```
+
 `verifyResult(text, expectedHash)` in `provenance.mjs` also checks that the text is in canonical
 form, which catches a reformatted copy that happens to contain the same data.
 

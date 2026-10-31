@@ -6,6 +6,7 @@
 #   --models   also delete downloaded Ollama models (~/.ollama/models; they are 1-5 GB each to re-download)
 #   --logout   also sign the Sokosumi CLI out (the next run asks for the browser login again)
 #   --all      both of the above, plus the postgres:16 Docker image
+#   --yes      delete the payment wallets without asking (they live in the payment database)
 # Env: LOKAL_HOME (default ~/.local/share/lokal), LOKAL_DB_CONTAINER (default lokal-mps-db).
 # Not touched: anything on Sokosumi or Cardano preprod (Vendor, Coworker, registry entry, transactions),
 # and an Ollama or Docker you installed yourself.
@@ -13,17 +14,35 @@ set -u
 LOKAL_HOME="${LOKAL_HOME:-$HOME/.local/share/lokal}"
 DB="${LOKAL_DB_CONTAINER:-lokal-mps-db}"
 BIN_DIR="$HOME/.local/bin"
-MODELS=0; LOGOUT=0; IMAGE=0
+MODELS=0; LOGOUT=0; IMAGE=0; YES=0
 for a in "$@"; do case "$a" in
-  --models) MODELS=1 ;; --logout) LOGOUT=1 ;; --all) MODELS=1; LOGOUT=1; IMAGE=1 ;;
+  --models) MODELS=1 ;; --logout) LOGOUT=1 ;; --all) MODELS=1; LOGOUT=1; IMAGE=1 ;; --yes|-y) YES=1 ;;
   -h|--help) sed -n '2,13p' "$0" 2>/dev/null || echo "options: --models --logout --all"; exit 0 ;;
   *) echo "unknown option: $a" >&2; exit 2 ;;
 esac; done
 
-if [ -t 1 ]; then V='\033[38;2;167;139;250m'; G='\033[32m'; D='\033[2m'; N='\033[0m'; else V=''; G=''; D=''; N=''; fi
+if [ -t 1 ]; then V='\033[38;2;167;139;250m'; G='\033[32m'; Y='\033[33m'; D='\033[2m'; N='\033[0m'; else V=''; G=''; Y=''; D=''; N=''; fi
 ok()   { printf "  ${G}✔${N} %s\n" "$1"; }
 skip() { printf "  ${D}· %s${N}\n" "$1"; }
 printf "\n${V}◆ lokAl${N} uninstall\n\n"
+
+# The payment database holds the only copy of the wallets' keys (selling and purchasing). Deleting it loses
+# whatever they hold: test ADA on preprod, real money on mainnet. Ask first, before anything is stopped.
+HAS_DB=0
+[ -d "$LOKAL_HOME/pgdata" ] && HAS_DB=1
+command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$DB" && HAS_DB=1
+if [ "$HAS_DB" = 1 ] && [ "$YES" = 0 ]; then
+  printf "  ${Y}!${N} The payment database holds your wallets' keys. Uninstalling deletes them and any funds they hold.\n"
+  for f in "$LOKAL_HOME"/app/coworker/docs/payment-state.json "$LOKAL_HOME"/app/coworker/docs/*/payment-state.json; do
+    [ -f "$f" ] || continue
+    a=$(sed -n 's/.*"sellerAddress": *"\([^"]*\)".*/\1/p' "$f"); [ -n "$a" ] && printf "    selling wallet %s\n" "$a"
+  done
+  printf "    Keep it: ${V}lokal wallet export --out ~/lokal-wallet.txt${N} (recovery phrase), then uninstall again.\n"
+  if (exec </dev/tty) 2>/dev/null; then
+    printf "  Type ${V}delete${N} to delete the wallets and uninstall: " >/dev/tty; read -r a </dev/tty || a=""
+    [ "$a" = delete ] || { printf "  Nothing removed.\n\n"; exit 1; }
+  else printf "  Nothing removed. Run with --yes to delete them anyway.\n\n"; exit 1; fi
+fi
 
 # 0. lokald (the background service) stops its own children cleanly; the systemd unit, if any, goes too.
 UNIT="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/lokald.service"

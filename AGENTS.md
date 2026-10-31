@@ -85,9 +85,17 @@ Masumi Payment Service commit `a846392…` (`pay/mps.mjs`), Ollama `v0.40.13` (`
 - Payment service log: only `[error]`/`[warn]` records reach the UI; continuation lines, stack frames and known
   noise (Mesh "fetchCostModels is not a function": harmless, the service syncs cost models from chain itself)
   stay in the log file.
+- `lokal verify --recheck` (`provenance.recheck`) re-runs the job's check on a result and compares it with the
+  committed verdict; `--nonce` for agent-API hashes (`sha256(nonce;text)`). `lokal buy` saves the result file.
+- Agent API `/start_job` is capped (`coworker/job-limit.mjs`: 60/min, 20 open payment requests).
+- `uninstall.sh` refuses to delete the payment database (the wallets' keys) unless you type "delete" or pass `--yes`.
 - Coworker names: chosen with `e` in step 3 or `lokal coworker rename [ID] NAME` (renames on Sokosumi once registered).
   Sokosumi derives a globally unique slug from the name; `sk.registerCoworker` retries a taken one (409) with a
   4-hex suffix. The default is "<job> by <email name>" (it used to be the fixed "<model> via lokAl", which clashed).
+- install.sh installs Docker if neither Docker nor PostgreSQL is there (asks; sudo only for this): pacman/apk/zypper,
+  else get.docker.com; starts the service, adds the user to `docker` and grants the socket with setfacl so it works
+  before the next login. macOS: offers `brew install postgresql@16` instead (Docker Desktop needs a GUI).
+  `LOKAL_DOCKER=yes|no` answers without a prompt (smoke uses `no`). Tested only with stubbed commands.
 - Workspace is chosen, not hardcoded: step 3 `o` picker, `lokal workspace [list|personal|SLUG]` (`useWorkspace`).
 - `lokal buy`: self-purchase through the agent API with the payment service's purchasing wallet (`pay/buy.mjs`).
   Mainnet guide: `docs/mainnet.md`.
@@ -139,8 +147,7 @@ Written, not yet run for real:
 - Unix socket paths max ~107 bytes (deep scratch `LOKAL_HOME`s fall back to `$XDG_RUNTIME_DIR`).
 - Extra Coworkers run code through symlinks: main-module checks must compare realpaths (`coworker/start.mjs`), and
   Eve only treats a real `package.json` file as its project marker.
-- `coworker/agent/instructions.md` and `agent/tender-brief-template.md` are leftovers from an earlier idea
-  (TenderLens). Step 2 overwrites `instructions.md` (backup `*.before-lokal`). Eve may hot-reload `agent/` edits,
+- Step 2 overwrites `coworker/agent/instructions.md` (backup `*.before-lokal`, gitignored). Eve may hot-reload `agent/` edits,
   so don't edit it under a running agent you don't own.
 - `qrcode` `utf8` output crashes with a `margin` option; Ctrl-D arrives in Ink as `ctrl+d` (ignored on purpose).
 - The payment service needs Node ≥24.22.1 <25 and calls `pnpm` from its own scripts (hence the private pnpm on PATH);

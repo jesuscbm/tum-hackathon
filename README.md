@@ -2,9 +2,11 @@
 
 Run a local language model (or any OpenAI-compatible API) as a paid agent on Sokosumi using Masumi escrow on Cardano preprod (mainnet opt-in). Works the same on a laptop and on a server over SSH.
 
+**Who it is for.** Anyone with spare compute (a gaming PC, a lab GPU server) who wants to sell agent work without a cloud API, and buyers whose data should not go to a large AI provider: an invoice processed by lokAl stays on the seller's machine and never reaches OpenAI or another provider. Buyers pay into escrow, and the seller only claims the payment when a deterministic check on the result passes.
+
 ## Setup
 
-Requirements: Linux or macOS (x64 or arm64), `curl`, `tar`, Docker or PostgreSQL (`brew install postgresql@16` on macOS, no Docker Desktop needed), a Sokosumi preprod account, and a Blockfrost preprod key. Lokal installs Node.js and can install Ollama if needed. Allow 2–5 GB per model. No browser or desktop keyring is needed on servers.
+Requirements: Linux or macOS (x64 or arm64), `curl`, `tar`, Docker or PostgreSQL for the payment database (the installer offers to install Docker on Linux, or `brew install postgresql@16` on macOS; it asks first, since that step needs sudo), a Sokosumi preprod account, and a Blockfrost preprod key. Lokal installs Node.js and can install Ollama if needed. Allow 2–5 GB per model. No browser or desktop keyring is needed on servers.
 
 One command does the whole ride: install, then the setup wizard starts in the same terminal.
 
@@ -28,7 +30,7 @@ lokal uninstall
 
 The built-in `invoice-json` job converts an invoice to JSON and checks its schema and totals. In the terminal UI, choose the job and submit a sample or live task.
 
-Jobs can also be Markdown files: front matter for `name`, `check` (`none|json|schema|regex|length|invoice`, with `schema`/`pattern`/`min`/`max`) and `price`, the body is the prompt. Import with `i` in step 2 or `lokal prompt add FILE.md`; see [docs/examples](docs/examples).
+Jobs can also be Markdown files: front matter for `name`, `check` (`none|json|schema|regex|length|invoice`, with `schema`/`pattern`/`min`/`max`) and `price`, the body is the prompt. Import with `f` in step 2 (on "+ Your prompt") or `lokal prompt add FILE.md`; see [docs/examples](docs/examples).
 
 Several jobs can run side by side, each as its own Sokosumi Coworker sharing the model and wallet (`c` in the UI, or `lokal coworker add NAME --prompt FILE.md`, `lokal coworker remove ID [--retire]`).
 
@@ -67,7 +69,7 @@ echo "$BLOCKFROST_API_KEY_PREPROD" | lokal set BLOCKFROST_API_KEY_PREPROD
 
 Templates can define deterministic checks, such as a JSON schema or numeric constraints. The worker checks the result before submission. It retries a failed result once, then withholds it; the buyer may reclaim funds after the escrow deadline. A passing result is submitted to Masumi escrow.
 
-The on-chain result hash covers canonical result data, including the output, prompt hash, model name, and weights digest when available. Checks validate format and constraints, not factual correctness. Remote model endpoints do not provide a verifiable weights digest. See [result verification](docs/verify.md).
+The on-chain result hash covers canonical result data, including the output, the check's verdict, prompt hash, model name, and weights digest when available. The seller runs the check, but the buyer does not have to trust it: the check is deterministic and the job is public, so `lokal verify result.json HASH --recheck` re-runs it and catches a seller who committed "pass" for a failing result (evidence for a Masumi dispute). The model and weights digest are what the seller *claims*: a binding commitment, not a hardware attestation. Checks validate format and constraints, not factual correctness. See [result verification](docs/verify.md).
 
 ## Status
 
@@ -79,13 +81,13 @@ The on-chain result hash covers canonical result data, including the output, pro
 - [x] `npm run smoke`: clean-room install, CLI and tests without accounts or keys (also in CI).
 - [x] Payment service phase A: Postgres in Docker, pinned checkout, installation and migration.
 - [ ] Ollama auto-install on a machine without it (implemented, not tested).
-- [ ] Local model answers a free Sokosumi task through the gate.
-- [ ] Payment service phase B: wallet setup, test ADA and agent registration (implemented, not tested).
-- [ ] Paid task completed with transaction hash and seller receipt in [docs/evidence.md](docs/evidence.md).
-- [ ] Check gate verified on a paid task; failing output is not submitted.
+- [x] Payment service phase B on preprod: wallets, automatic test ADA, agent registration (tx `27d3b0f8…`, see [docs/evidence.md](docs/evidence.md)).
+- [x] Paid task on preprod through the gate with Llama 3.2 3B: FundsLocked `bc6d593b…`, ResultSubmitted `7332dccf…`; `lokal verify` matches the on-chain hash.
+- [ ] Seller receipt (withdrawal to the selling wallet) for that task: pending.
+- [ ] Check gate on a paid task with a failing result (no ResultSubmitted) and the buyer's refund.
 - [ ] Fresh-machine run and time to first paid job: not measured.
 - [x] lokald background service, file vault and API-key login for SSH, extra Coworkers, Markdown jobs, `lokal info`, health map (unit tests, mock and scratch folders).
-- [ ] API and llama.cpp backends, extra Coworker registration, and mainnet against real services (implemented, not tested).
+- [ ] API and llama.cpp backends, extra Coworker registration, `lokal buy`, ADA prices, and mainnet against real services (implemented, not tested).
 
 ## Limits
 
@@ -100,7 +102,7 @@ The on-chain result hash covers canonical result data, including the output, pro
 Requires Node.js 24.
 
 ```sh
-git clone https://github.com/jesuscbm/tum-hackathon.git lokal
+git clone https://github.com/jesuscbm/lokAl.git lokal
 cd lokal
 npm ci
 cd coworker && npm ci && cd ..

@@ -9,7 +9,7 @@ const opencodeFetch: typeof fetch = (input, init) => {
   const opening = JSON.stringify(JSON.parse(String(init?.body)).messages?.slice(0, 2));
   headers.set('x-opencode-session', createHash('sha256').update(opening).digest('hex').slice(0, 32));
  } catch {}
- headers.set('user-agent', 'tenderlens-coworker');
+ headers.set('user-agent', 'lokal-coworker');
  return fetch(input, {...init, headers});
 };
 const provider = createOpenAICompatible({name:'zai',baseURL:process.env.ZAI_BASE_URL!,apiKey:process.env.ZAI_API_KEY!,fetch:process.env.ZAI_BASE_URL?.includes('opencode.ai')?opencodeFetch:undefined});

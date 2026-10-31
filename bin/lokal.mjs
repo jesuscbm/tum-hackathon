@@ -5,7 +5,7 @@ const [cmd,...args]=process.argv.slice(2);
 const mock=process.env.LOKAL_MOCK==='1'||args.includes('--mock')||cmd==='--mock';
 const flag=f=>args.includes(f);
 const opt=f=>{const i=args.indexOf(f);return i>=0?args[i+1]:undefined};
-const pos=args.filter((a,i)=>!a.startsWith('--')&&!(i>0&&['--template','--prompt','--out','--model','--coworker'].includes(args[i-1])));
+const pos=args.filter((a,i)=>!a.startsWith('--')&&!(i>0&&['--template','--prompt','--out','--model','--coworker','--nonce','--file'].includes(args[i-1])));
 const HELP=`lokAl: your local LLM, hired and paid on Cardano
 
   lokal              open the setup wizard / dashboard (terminal UI); services keep running when you quit
@@ -38,9 +38,10 @@ const HELP=`lokAl: your local LLM, hired and paid on Cardano
   lokal set NAME     save BLOCKFROST_API_KEY_PREPROD, BLOCKFROST_API_KEY_MAINNET, AGENT_AUTHOR, AGENT_PUBLIC_URL
                      or AGENT_API_HOST (value on stdin)
   lokal doctor       one line per layer: model, agent, worker, Sokosumi, payments
-  lokal verify FILE [HASH]
-                     check a result's canonical JSON against an on-chain resultHash
-  lokal uninstall    remove everything lokAl installed [--models] [--logout] [--all]
+  lokal verify FILE [HASH] [--nonce HEX] [--recheck]
+                     check a result's canonical JSON against an on-chain resultHash (--nonce for agent-API jobs);
+                     --recheck re-runs the job's check here and compares it with the seller's committed verdict
+  lokal uninstall    remove everything lokAl installed [--models] [--logout] [--all] [--yes]
   --mock             fake backend, for demos and UI work`;
 async function core(){return mock?(await import('../core/mock.mjs')).createMockCore():(await import('../core/index.mjs')).createCore();}
 const ICON={ok:'✔',todo:'○',action:'➜',input:'✎',fail:'✖',warn:'!',running:'◐',off:'·'};
@@ -74,13 +75,28 @@ else if(cmd==='doctor'){
  process.exit(0);
 }
 else if(cmd==='verify'){
- const {verifyResult,resultHash}=await import('../provenance.mjs');
- if(!args[0])die('usage: lokal verify FILE [HASH]',2);
- const text=readFileSync(args[0],'utf8').replace(/\n$/,'');
- if(!args[1]){console.log(resultHash(text));process.exit(0);}
- const r=verifyResult(text,args[1]);
- if(r.ok){const p=r.parsed;console.log(`✔ hash matches\n  model   ${p.model}\n  weights ${p.digest??'unverified'}\n  prompt  ${p.promptHash}\n  check   ${p.check?.type}: ${p.check?.pass?'passed':'failed'}`);process.exit(0);}
- console.log(`✖ ${r.reason??'hash does not match'}`);process.exit(1);
+ const {verifyResult,resultHash,recheck}=await import('../provenance.mjs');
+ const [file,hash]=pos;const nonce=opt('--nonce');
+ if(!file)die('usage: lokal verify FILE [HASH] [--nonce HEX] [--recheck]',2);
+ const text=readFileSync(file,'utf8').replace(/\n$/,'');
+ let code=0,parsed=null;
+ if(!hash&&!flag('--recheck')){console.log(resultHash(text,nonce));process.exit(0);}
+ if(hash){
+  const r=verifyResult(text,hash,{nonce});parsed=r.parsed;
+  if(r.ok)console.log(`✔ hash matches${nonce?' (with the buyer nonce)':''}\n  model   ${r.parsed.model}\n  weights ${r.parsed.digest??'unverified'}\n  prompt  ${r.parsed.promptHash}\n  check   ${r.parsed.check?.type}: ${r.parsed.check?.pass?'passed':'failed'} (as committed by the seller)`);
+  else{console.log(`✖ ${r.reason??'hash does not match'}${nonce?'':' (agent-API jobs also need --nonce: the buyer\'s identifierFromPurchaser)'}`);code=1;}
+ }
+ if(flag('--recheck')){
+  try{parsed??=JSON.parse(text)}catch{die('not a lokAl result (not JSON)')}
+  const c=recheck(parsed);
+  if(c.ok===null){console.log(`· ${c.reason}`);code||=2;}
+  else{
+   console.log(`${c.ok?'✔':'✖'} check re-run here: ${c.check.type} ${c.check.pass?'passes':'fails'}${c.ok?', same as the seller committed':` (${c.reason})`}`);
+   console.log(`${c.prompt?'✔':'!'} prompt ${c.prompt?'matches':'differs from'} the published "${parsed.template}" job${c.prompt?'':' (the seller ran another prompt, or another version of it)'}`);
+   if(!c.ok)code=1;
+  }
+ }
+ process.exit(code);
 }
 else if(cmd==='up'){
  // Services run in lokald; this terminal only shows their logs. Closing it (or the SSH session) changes nothing.
@@ -270,7 +286,10 @@ else if(cmd==='buy'){
   for(const t of s.txs)if(!seen.has(t.hash)){seen.add(t.hash);console.log(`  tx ${t.url}`);}
   const line=`  agent: ${s.job} · escrow: ${s.onChain??'not on chain yet'}${s.action?` · buyer: ${s.action}`:''}${s.error?` (${s.error})`:''}`;
   if(line!==last){console.log(line);last=line;}
-  if(s.job==='completed'&&s.result!=null){console.log(`\n${s.result}\n\n${s.verified?'✔ the result matches the on-chain resultHash':s.verified===false?'✖ the result does NOT match the on-chain resultHash':'· no on-chain resultHash yet'}`);process.exit(s.verified?0:1);}
+  if(s.job==='completed'&&s.result!=null){
+   const out=`lokal-result-${job.jobId.slice(0,8)}.json`;writeFileSync(out,s.result);
+   console.log(`\n${s.result}\n\n${s.verified?'✔ the result matches the on-chain resultHash':s.verified===false?'✖ the result does NOT match the on-chain resultHash':'· no on-chain resultHash yet'}\n  saved to ${out}; check it again any time:\n  lokal verify ${out} ${s.resultHash??'HASH'} --nonce ${job.nonce} --recheck`);
+   process.exit(s.verified?0:1);}
   if(s.job==='failed'){console.log(`\n✖ The agent submitted no result (its check failed or the deadline passed), so the seller cannot withdraw.\n  The escrow stays refundable to the purchasing wallet after the result deadline (escrow: ${s.onChain}).`);process.exit(1);}
   await new Promise(r=>setTimeout(r,10000));
  }
@@ -292,9 +311,9 @@ else if(cmd==='sokosumi'){
  process.exit(r.status??1);
 }
 else if(cmd==='uninstall'){
- // Same as uninstall.sh: lokal uninstall [--models] [--logout] [--all]
+ // Same as uninstall.sh: lokal uninstall [--models] [--logout] [--all] [--yes]. The script stops lokald itself,
+ // after asking about the wallets (so saying no leaves everything running).
  const {spawnSync}=await import('node:child_process');const {fileURLToPath}=await import('node:url');
- try{await (await import('../core/daemon.mjs')).shutdown()}catch{}
  const script=fileURLToPath(new URL('../uninstall.sh',import.meta.url));
  process.exit(spawnSync('sh',[script,...args],{stdio:'inherit'}).status??1);
 }

@@ -11,6 +11,7 @@ case "$*" in *"--name Taken by you --"*) echo '{"error":"Core API request failed
 echo '{"coworker":{"id":"cw_new"}}'
 `);chmodSync(join(bin,'sokosumi'),0o755);
 process.env.PATH=`${bin}:${process.env.PATH}`;
+process.env.LOKAL_HOME=mkdtempSync(join(tmpdir(),'lokal-soko-home-')); // logs go here, not to the real lokal.log
 const sk=await import('../core/sokosumi.mjs');
 test('a Coworker name that is taken on Sokosumi gets a short suffix instead of failing',async()=>{
  const c=await sk.registerCoworker({vendorId:'v',name:'Taken by you',description:'d'});

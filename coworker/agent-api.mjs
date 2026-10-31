@@ -5,6 +5,7 @@ import {answer,client} from './client.mjs';
 import {inputHash,resultHash,sha256} from './standard-hash.mjs';
 import {confirmedState} from './paid-task.mjs';
 import {gate} from './lokal-gate.mjs';
+import {busy} from './job-limit.mjs';
 import {networkOf} from '../core/network.mjs';
 // lokal: network from LOKAL_NETWORK (preprod default); answers go through the check gate like the worker's.
 const net=networkOf();const gated=gate(answer);
@@ -23,6 +24,8 @@ const template=(()=>{try{return loadTemplate(process.env.LOKAL_TEMPLATE||'freefo
 // lokal: the Coworker's price (lokal price, else the job's own).
 const funds=fundsFor(priceFor(),net);
 const schema={input_data:[{id:'prompt',type:'string',name:template.name,data:{description:template.inputLabel??template.description??'Describe what you need'},validations:[{validation:'min',value:'1'},{validation:'max',value:'16000'}]}]};
+// lokal: /start_job is public and unauthenticated (MIP-003); job-limit.mjs caps how many it accepts.
+const starts=[];
 const respond=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(data))};
 const port=Number(process.env.AGENT_API_PORT||21950);
 createServer(async(req,res)=>{
@@ -43,6 +46,9 @@ createServer(async(req,res)=>{
  // Persist before the payment write. Unknown outcomes require inspection, never automatic replay.
  const key=sha256(nonce);let job=readdirSync(jobsDir).filter(x=>/^[0-9a-f-]{36}\.json$/.test(x)).map(x=>load(x.replace('.json',''))).find(j=>j.nonceKey===key);
  if(job){if(job.inputHash!==inputHash(input.input_data,nonce))return respond(res,409,{error:'Nonce already used with another input'});return respond(res,job.response?200:409,job.response||{error:'Payment outcome requires inspection'});}
+ const why=busy(readdirSync(jobsDir).filter(x=>/^[0-9a-f-]{36}\.json$/.test(x)).map(x=>load(x.replace('.json',''))),starts);
+ if(why){res.setHeader('retry-after','60');return respond(res,429,{error:`Busy (${why}); retry in a minute`});}
+ starts.push(Date.now());
  const now=Date.now();const minute=60000;
  job={id:randomUUID(),nonceKey:key,nonce,input:input.input_data,inputHash:inputHash(input.input_data,nonce),status:'awaiting_payment',phase:'payment-pending'};save(job);
  const payment=await mps('/payment',{network:net.mps,paymentSourceType:'Web3CardanoV2',supportedPaymentSourceIndex:reg.supportedPaymentSourceIndex,inputHash:job.inputHash,agentIdentifier:reg.agentIdentifier,identifierFromPurchaser:nonce,RequestedFunds:funds,payByTime:new Date(now+10*minute).toISOString(),submitResultTime:new Date(now+20*minute).toISOString(),unlockTime:new Date(now+36*minute).toISOString(),externalDisputeUnlockTime:new Date(now+52*minute).toISOString()});
