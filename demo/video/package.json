@@ -1,0 +1,23 @@
+{
+  "name": "lokal-demo-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sfx": "node scripts/sfx.mjs",
+    "script": "node scripts/vo-script.mjs",
+    "prestudio": "node scripts/sfx.mjs",
+    "studio": "remotion studio src/index.jsx",
+    "prerender": "node scripts/sfx.mjs",
+    "render": "remotion render src/index.jsx LokalDemo out/lokal-demo.mp4",
+    "render:silent": "remotion render src/index.jsx LokalDemo out/lokal-demo-silent.mp4 --props='{\"sfx\":false}'",
+    "avatar": "node scripts/avatar.mjs"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.535",
+    "@remotion/google-fonts": "4.0.535",
+    "@remotion/transitions": "4.0.535",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.535"
+  }
+}
