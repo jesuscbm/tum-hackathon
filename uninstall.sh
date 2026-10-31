@@ -5,7 +5,7 @@
 # Options:
 #   --models   also delete downloaded Ollama models (~/.ollama/models; they are 1-5 GB each to re-download)
 #   --logout   also sign the Sokosumi CLI out (the next run asks for the browser login again)
-#   --all      both of the above, plus the postgres:16 Docker image
+#   --all      both of the above, plus the postgres:16 Docker image (lokAl pins 16.15)
 #   --yes      delete the payment wallets without asking (they live in the payment database)
 # Env: LOKAL_HOME (default ~/.local/share/lokal), LOKAL_DB_CONTAINER (default lokal-mps-db).
 # Not touched: anything on Sokosumi or Cardano preprod (Vendor, Coworker, registry entry, transactions),
@@ -76,8 +76,9 @@ else skip "No payment database container"; fi
 if command -v docker >/dev/null 2>&1 && docker volume inspect "$DB-data" >/dev/null 2>&1; then
   docker volume rm "$DB-data" >/dev/null 2>&1 && ok "Removed Docker volume $DB-data (payment database data)"
 fi
-if [ "$IMAGE" = 1 ] && command -v docker >/dev/null 2>&1 && docker image inspect postgres:16 >/dev/null 2>&1; then
-  docker image rm postgres:16 >/dev/null 2>&1 && ok "Removed Docker image postgres:16" || skip "postgres:16 image in use elsewhere; kept"
+if [ "$IMAGE" = 1 ] && command -v docker >/dev/null 2>&1; then
+  for img in postgres:16.15@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c postgres:16.15 postgres:16; do docker image inspect "$img" >/dev/null 2>&1 || continue
+    docker image rm "$img" >/dev/null 2>&1 && ok "Removed Docker image $img" || skip "$img image in use elsewhere; kept"; done
 fi
 
 # 3. Sokosumi login (before its CLI is deleted).

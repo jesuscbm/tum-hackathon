@@ -3,6 +3,9 @@ import {client} from './client.mjs';
 import {loadSokosumiRuntime} from './sokosumi-runtime.mjs';
 import {taskTarget,assertTaskTarget,verifyRuntimeTask} from './task-target.mjs';
 const target=taskTarget();
+// lokal: follow-up comments are answered without payment or check, so cap them per Task (the Masumi checklist
+// asks for one follow-up reply); otherwise one paid Task buys unlimited free answers.
+const MAX_FOLLOWUPS=Number(process.env.LOKAL_MAX_FOLLOWUPS??3);
 const {readRuntimeCredential,createCoworkerHttpClient,fetchTaskEvents,createTaskEvent}=await loadSokosumiRuntime();
 const runtime=createCoworkerHttpClient({apiKey:readRuntimeCredential(target.coworkerId)});
 export async function reply(task){
@@ -17,6 +20,7 @@ export async function reply(task){
  const {sessionId}=JSON.parse(readFileSync(sessionFile,'utf8'));
  for(const event of events.filter(e=>e.actor?.type==='user'&&typeof e.comment==='string'&&e.comment.trim())){
  if(state[event.id])continue;
+ if(Object.values(state).filter(v=>v!=='limit').length>=MAX_FOLLOWUPS){state[event.id]='limit';writeFileSync(p,JSON.stringify(state),{mode:0o600});continue;}
  state[event.id]='model-pending';writeFileSync(p,JSON.stringify(state),{mode:0o600});
  const response=await(await client.sessions.attach(sessionId).send(event.comment.slice(0,16000))).result();
  if(response.status==='failed'||response.inputRequests.length||!response.message?.trim())continue;

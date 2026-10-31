@@ -51,7 +51,7 @@ export async function setValue(key,value){
  if(!ALLOWED.includes(key))throw new Error(`Unknown setting ${key}`);
  if(key==='BLOCKFROST_API_KEY_PREPROD'&&!bfKeyOk(NETWORKS.preprod,v))throw new Error('That is not a preprod key (it must start with "preprod").');
  if(key==='BLOCKFROST_API_KEY_MAINNET'&&!bfKeyOk(NETWORKS.mainnet,v))throw new Error('That is not a mainnet key (it must start with "mainnet").');
- if(key==='AGENT_PUBLIC_URL'&&!/^https?:\/\/[^\s/]+/.test(v))throw new Error('Enter a full URL, e.g. https://agent.example.com');
+ if(key==='AGENT_PUBLIC_URL'){let u=null;try{u=new URL(v)}catch{}if(!u||!['http:','https:'].includes(u.protocol)||/\s/.test(v)||u.username||u.password)throw new Error('Enter a full URL, e.g. https://agent.example.com');}
  if(key==='AGENT_API_HOST'&&!['127.0.0.1','0.0.0.0','::'].includes(v))throw new Error('AGENT_API_HOST is 127.0.0.1 (default, behind a reverse proxy) or 0.0.0.0 (reachable from outside)');
  writeEnv({[key]:key==='AGENT_PUBLIC_URL'?v.replace(/\/+$/,''):v});return status();
 }

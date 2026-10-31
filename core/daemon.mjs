@@ -1,6 +1,6 @@
 import {createServer,request} from 'node:http';
 import {spawn} from 'node:child_process';
-import {existsSync,rmSync,openSync,writeFileSync,readFileSync,mkdirSync} from 'node:fs';
+import {existsSync,rmSync,openSync,writeFileSync,readFileSync,mkdirSync,closeSync,unlinkSync,chmodSync} from 'node:fs';
 import {join} from 'node:path';
 import {homedir,tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
@@ -12,6 +12,17 @@ import {bus,log,recentLogs} from './events.mjs';
 // Unix socket paths are limited to ~107 bytes; a deep LOKAL_HOME gets a short per-home path instead.
 export const SOCK=()=>{if(process.env.LOKAL_SOCK)return process.env.LOKAL_SOCK;const p=join(HOME,'lokald.sock');return Buffer.byteLength(p)<100?p:join(process.env.XDG_RUNTIME_DIR||tmpdir(),`lokald-${createHash('sha256').update(HOME).digest('hex').slice(0,12)}.sock`);};
 const PIDF=()=>join(HOME,'lokald.pid');
+const LOCKF=()=>join(HOME,'lokald.lock');
+// One lokald per LOKAL_HOME, even when the UI and the CLI start one at the same moment (two would each run a
+// worker). Exclusive create; a lock whose pid is gone is stale, and only one process wins its replacement.
+export function takeLock(f=LOCKF()){
+ const make=()=>{const fd=openSync(f,'wx',0o600);writeFileSync(fd,String(process.pid));closeSync(fd)};
+ try{make();return true}catch(e){if(e.code!=='EEXIST')throw e;}
+ const pid=Number(readFileSync(f,'utf8'));
+ if(pid&&pid!==process.pid){try{process.kill(pid,0);throw new Error(`lokald is already running (pid ${pid})`)}catch(e){if(e.code!=='ESRCH')throw e;}}
+ try{unlinkSync(f)}catch{}
+ try{make();return true}catch(e){if(e.code==='EEXIST')throw new Error('Another lokald is starting');throw e;}
+}
 // ---- client ----
 export function call(path,{method='GET',body,timeout=10000}={}){
  return new Promise((res,rej)=>{
@@ -56,6 +67,7 @@ export function subscribe(onEvent){
 export async function serve({sup,autostart=true}){
  ensureDirs();
  if((await status()).running)throw new Error('lokald is already running');
+ takeLock();
  rmSync(SOCK(),{force:true});
  const clients=new Set();
  const send=(type,data)=>{const msg=`data: ${JSON.stringify({type,data})}\n\n`;for(const c of clients)c.write(msg)};
@@ -83,6 +95,7 @@ export async function serve({sup,autostart=true}){
   try{json(res,200,await h(url.searchParams,body?JSON.parse(body):undefined))}catch(e){json(res,500,{error:e.message})}
  });
  await new Promise((res,rej)=>{server.once('error',rej);server.listen(SOCK(),res)});
+ chmodSync(SOCK(),0o600); // only this user may control the services
  writeFileSync(PIDF(),String(process.pid),{mode:0o600});
  log('lokald',`Running (pid ${process.pid}); socket ${SOCK()}`);
  let stopping=false;
@@ -91,7 +104,7 @@ export async function serve({sup,autostart=true}){
   log('lokald','Stopping services');
   await sup.stopAll();
   for(const c of clients)c.end();
-  server.close();rmSync(SOCK(),{force:true});rmSync(PIDF(),{force:true});
+  server.close();rmSync(SOCK(),{force:true});rmSync(PIDF(),{force:true});rmSync(LOCKF(),{force:true});
   process.exit(0);
  }
  process.on('SIGTERM',stop);process.on('SIGINT',stop);process.on('SIGHUP',()=>{});

@@ -1,0 +1,8 @@
+{
+  "name": "lokal-sokosumi-cli",
+  "private": true,
+  "description": "The pinned Sokosumi CLI with a lockfile, so a fresh upstream release of a dependency cannot break the install.",
+  "dependencies": {
+    "@masumi_network/sokosumi": "1.1.0"
+  }
+}

@@ -140,7 +140,7 @@ function Dashboard({jobs,earn,health,sel,res,hist,active,tick,rows,net}){
   <${Box}>
    <${Card} title=${`Health · ${net}`} width=${74}><${Flow} health=${health} active=${active} tick=${tick}/></${Card}>
    <${Card} title="Earned" flexGrow=${1}>
-    <${Text} color=${C.ok} bold>${earn.usdm} USDM</${Text}><${Text} color=${C.dim}>${earn.paidJobs} paid of ${earn.jobs} jobs</${Text}>
+    <${Text} color=${C.ok} bold>${earn.usdm} USDM${earn.ada?` · ${earn.ada} ADA`:''}</${Text}><${Text} color=${C.dim}>${earn.paidJobs} paid of ${earn.jobs} jobs</${Text}>
     <${Text}> </${Text}><${Text} color=${C.dim}>check pass rate <${Text} color=${C.accent2} bold>${earn.passRate==null?'—':Math.round(earn.passRate*100)+'%'}</${Text}></${Text}><${Text} color=${C.dim}>failed = not charged</${Text}>
    </${Card}>
   </${Box}>

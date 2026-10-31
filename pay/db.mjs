@@ -9,6 +9,8 @@ import {run,which} from '../core/exec.mjs';
 // Both listen on 127.0.0.1:55432 with user/database "masumi".
 export const DB_NAME=process.env.LOKAL_DB_CONTAINER||'lokal-mps-db';
 export const DB_PORT=55432;
+// Pinned by digest (multi-arch index of postgres:16.15, 2026-10-31): a re-pushed tag cannot change the database.
+export const DB_IMAGE='postgres:16.15@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c';
 export const DB_VOLUME=`${DB_NAME}-data`; // named, so a removed container can be recreated with its data
 export const PGDATA=join(HOME,'pgdata');
 const BREW=['/opt/homebrew/opt/postgresql@16/bin','/usr/local/opt/postgresql@16/bin','/opt/homebrew/opt/postgresql@17/bin','/usr/local/opt/postgresql@17/bin','/opt/homebrew/bin','/usr/local/bin','/Applications/Postgres.app/Contents/Versions/latest/bin'];
@@ -49,7 +51,7 @@ export async function ensureUp(kind,password,{expectData=false}={}){
   if(!ps.stdout.trim()){
    if(ps.code!==0)throw new Error('Docker is not running: start it, then retry.');
    if(expectData&&(await run('docker',['volume','inspect',DB_VOLUME],{quiet:true})).code!==0)throw new Error(`The database container ${DB_NAME} was deleted, and ${LOST} (A container removed without -v may have left its data in an unnamed volume: docker volume ls.)`);
-   await must(await run('docker',['run','-d','--name',DB_NAME,'--restart','unless-stopped','-e','POSTGRES_USER=masumi','-e',`POSTGRES_PASSWORD=${password}`,'-e','POSTGRES_DB=masumi','-p',`127.0.0.1:${DB_PORT}:5432`,'-v',`${DB_VOLUME}:/var/lib/postgresql/data`,'postgres:16'],{source:'mps',timeout:600000}),'docker run postgres');
+   await must(await run('docker',['run','-d','--name',DB_NAME,'--restart','unless-stopped','-e','POSTGRES_USER=masumi','-e',`POSTGRES_PASSWORD=${password}`,'-e','POSTGRES_DB=masumi','-p',`127.0.0.1:${DB_PORT}:5432`,'-v',`${DB_VOLUME}:/var/lib/postgresql/data`,DB_IMAGE],{source:'mps',timeout:600000}),'docker run postgres');
   }
   else if(!ps.stdout.startsWith('Up'))await must(await run('docker',['start',DB_NAME],{source:'mps'}),'docker start');
  }else{

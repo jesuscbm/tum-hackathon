@@ -20,7 +20,7 @@ function taskJobs(c){
   const check=j.check??p?.check??canonical?.check??null;
   return {id,coworker:c.id,source:'sokosumi',updatedAt:statSync(file).mtimeMs,paid:!!p,phase:j.phase??null,stage:p?.stage??null,
    input:j.input??null,output:canonical?.output??result,canonical,check,model:canonical?.model??null,digest:canonical?.digest??null,
-   onChainState:obs?.onChainState??null,resultHash:p?.resultHash??j.resultHash??null,txs:uniq,settled:p?.settlement?.verified??false,
+   onChainState:obs?.onChainState??null,resultHash:p?.resultHash??j.resultHash??null,txs:uniq,settled:p?.settlement?.verified??false,funds:p?.request?.RequestedFunds??null,
    status:p?(p.stage==='check-failed'?'withheld':p.stage==='settled'?'paid':p.stage):j.phase};
  });
 }
@@ -31,15 +31,17 @@ function apiJobs(c){
   const canonical=j.result?parseResult(j.result):null;
   return {id,coworker:c.id,source:'api',updatedAt:statSync(file).mtimeMs,paid:true,phase:j.phase??null,stage:j.phase??null,
    input:j.input?.prompt??null,output:canonical?.output??j.result??null,canonical,check:j.check??canonical?.check??null,model:canonical?.model??null,digest:canonical?.digest??null,
-   onChainState:null,resultHash:j.resultHash??null,txs:[],settled:false,
+   onChainState:null,resultHash:j.resultHash??null,txs:[],settled:false,funds:j.payment?.RequestedFunds??null,
    status:j.phase==='check-failed'?'withheld':j.phase==='result-confirmed'?'result on-chain':j.phase};
  });
 }
 export function listJobs(limit=30){
  return cw.list().flatMap(c=>[...taskJobs(c),...apiJobs(c)]).sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,limit);
 }
+// Settled jobs only, at the price each one asked for (lokal price can change between jobs); ADA is the empty unit.
 export function earnings(jobs=listJobs(1000)){
- const done=jobs.filter(j=>j.status==='paid'||j.settled).length;
+ const done=jobs.filter(j=>j.status==='paid'||j.settled);
+ const sum=ada=>done.reduce((n,j)=>n+(j.funds??[{unit:'usdm',amount:'1000000'}]).filter(f=>(f.unit==='')===ada).reduce((m,f)=>m+Number(f.amount)/1e6,0),0);
  const checked=jobs.filter(j=>j.check);
- return {jobs:jobs.length,paidJobs:done,usdm:done*1,passRate:checked.length?checked.filter(j=>j.check.pass).length/checked.length:null};
+ return {jobs:jobs.length,paidJobs:done.length,usdm:+sum(false).toFixed(6),ada:+sum(true).toFixed(6),passRate:checked.length?checked.filter(j=>j.check.pass).length/checked.length:null};
 }

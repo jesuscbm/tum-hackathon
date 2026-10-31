@@ -40,7 +40,7 @@ createServer(async(req,res)=>{
  }
  if(req.method!=='POST'||url.pathname!=='/start_job')return respond(res,404,{error:'Route not found'});
  let bytes=0,body='';for await(const part of req){bytes+=part.length;if(bytes>20000)return respond(res,413,{error:'Request too large'});body+=part}
- const input=JSON.parse(body);const nonce=input.identifier_from_purchaser??input.identifierFromPurchaser;
+ let input;try{input=JSON.parse(body)}catch{return respond(res,400,{error:'Body must be JSON'})}const nonce=input.identifier_from_purchaser??input.identifierFromPurchaser;
  if(!/^[a-fA-F0-9]{14,26}$/.test(nonce||'')||typeof input.input_data?.prompt!=='string'||!input.input_data.prompt.trim()||input.input_data.prompt.length>16000||Object.keys(input.input_data).some(k=>k!=='prompt'))return respond(res,400,{error:'Expected hex purchaser nonce and input_data.prompt'});
  const reg=registry();if(reg.registrationState!=='RegistrationConfirmed'&&reg.registration?.state!=='RegistrationConfirmed')return respond(res,503,{error:'Registration not confirmed'});
  // Persist before the payment write. Unknown outcomes require inspection, never automatic replay.

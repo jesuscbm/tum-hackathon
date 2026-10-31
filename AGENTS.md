@@ -63,8 +63,8 @@ In a throwaway VM: `uninstall.sh --all` then the curl installer gives a true fro
 ## Style
 Plain ES modules (`.mjs`), Node 24, **no build step**. Ink components use `htm` (`tui/html.mjs`), not JSX.
 Terse code that matches `coworker/*.mjs`; comments only for the non-obvious. Exact-pinned dependencies; add one only
-if it removes real work. Pinned externals: Node `v24.22.1`, Sokosumi CLI `1.1.0` (1.0.4 breaks: Core dropped `/v1/users/me/workspace-access`, used by every `--personal` call), pnpm `10.30.2`,
-Masumi Payment Service commit `a846392…` (`pay/mps.mjs`), Ollama `v0.40.13` (`core/runtime/ollama.mjs`), `postgres:16`.
+if it removes real work. Pinned externals: Node `v24.22.1`, Sokosumi CLI `1.1.0` (installed with `npm ci` from `sokosumi-cli/package-lock.json`, never `npm i -g`: a fresh upstream release, cli-truncate 6.2.0 on 2026-10-31, 404ed and broke installs; regenerate with `npm install --package-lock-only --before=DATE`) (1.0.4 breaks: Core dropped `/v1/users/me/workspace-access`, used by every `--personal` call), pnpm `10.30.2`,
+Masumi Payment Service commit `a846392…` (`pay/mps.mjs`), Ollama `v0.40.13` (sha256 pinned, `core/runtime/ollama.mjs`), `postgres:16.15@sha256:1beaa30…` (`pay/db.mjs` `DB_IMAGE`), GitHub Actions by commit, `save-exact` in every `.npmrc`.
 
 ## Safety rules
 - Never read, print or commit `coworker/.env`, `coworker/.local/`, `docs/*.json`, `~/.local/share/lokal/mps-seed.log`
@@ -88,6 +88,11 @@ Masumi Payment Service commit `a846392…` (`pay/mps.mjs`), Ollama `v0.40.13` (`
 - `lokal verify --recheck` (`provenance.recheck`) re-runs the job's check on a result and compares it with the
   committed verdict; `--nonce` for agent-API hashes (`sha256(nonce;text)`). `lokal buy` saves the result file.
 - Agent API `/start_job` is capped (`coworker/job-limit.mjs`: 60/min, 20 open payment requests).
+- Sweep fixes: `writeEnv` quotes values for Node's `--env-file` and refuses line breaks (`envValue`); lokald takes
+  `$LOKAL_HOME/lokald.lock` (one daemon per home) and its socket is mode 600; the gate asks Ollama for the live
+  digest before the recorded one; follow-up comments are capped (`LOKAL_MAX_FOLLOWUPS`, 3); with paid Tasks on, the
+  worker never answers for free while registration is pending, and skips settled/check-failed Tasks; earnings
+  sum each job's own price.
 - `uninstall.sh` refuses to delete the payment database (the wallets' keys) unless you type "delete" or pass `--yes`.
 - Coworker names: chosen with `e` in step 3 or `lokal coworker rename [ID] NAME` (renames on Sokosumi once registered).
   Sokosumi derives a globally unique slug from the name; `sk.registerCoworker` retries a taken one (409) with a

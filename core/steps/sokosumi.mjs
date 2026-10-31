@@ -20,7 +20,7 @@ export const plannedName=(user)=>{const cfg=loadConfig();return cfg.coworkerName
 export async function status(){
  const cli=await sk.installed();
  const env=readEnv(),cfg=loadConfig();
- const items=[{label:'Sokosumi CLI',status:cli.installed?(cli.pinned?'ok':'warn'):'todo',detail:cli.installed?`v${cli.version}${cli.pinned?'':` (lokAl is tested with ${sk.CLI_VERSION})`}`:`installed by the lokal installer (npm i -g @masumi_network/sokosumi@${sk.CLI_VERSION})`}];
+ const items=[{label:'Sokosumi CLI',status:cli.installed?(cli.pinned?'ok':'warn'):'todo',detail:cli.installed?`v${cli.version}${cli.pinned?'':` (lokAl is tested with ${sk.CLI_VERSION})`}`:`installed by the lokal installer (Sokosumi CLI ${sk.CLI_VERSION})`}];
  if(!cli.installed)return {id,title,status:'todo',items};
  if(await keychainLocked())items.push({label:'Keychain',status:'action',detail:'macOS over SSH: run `security unlock-keychain` once per session so the Sokosumi CLI can keep its keys',command:'security unlock-keychain'});
  const user=await sk.whoami();

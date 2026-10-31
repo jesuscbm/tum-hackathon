@@ -10,10 +10,12 @@ export function gateConfig(env=process.env){
  const instructions=existsSync('agent/instructions.md')?readFileSync('agent/instructions.md','utf8'):template.prompt;
  return {template,promptHash:promptHash(instructions),model:env.ZAI_MODEL,baseURL:env.ZAI_BASE_URL};
 }
+// Ask Ollama for the digest it serves right now: the one recorded at setup goes stale after an `ollama pull`.
+// LOKAL_MODEL_DIGEST (setup's record, or a llama.cpp GGUF hash) is the fallback for other backends.
 async function modelDigest(cfg,env=process.env){
- if(env.LOKAL_MODEL_DIGEST)return env.LOKAL_MODEL_DIGEST;
  const base=cfg.baseURL?.replace(/\/v1\/?$/,'');
- try{const r=await fetch(base+'/api/tags',{signal:AbortSignal.timeout(3000)});const m=(await r.json()).models?.find(m=>m.name===cfg.model||m.model===cfg.model);return m?.digest?`sha256:${m.digest}`:null}catch{return null}
+ try{const r=await fetch(base+'/api/tags',{signal:AbortSignal.timeout(3000)});const m=(await r.json()).models?.find(m=>m.name===cfg.model||m.model===cfg.model);if(m?.digest)return `sha256:${m.digest}`}catch{}
+ return env.LOKAL_MODEL_DIGEST||null;
 }
 export function gate(answer,env=process.env){
  // Without LOKAL_TEMPLATE the starter behaves exactly as before (plain-text results, no check).

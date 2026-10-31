@@ -90,7 +90,7 @@ There are two twists:
 | "The result commits to the model weights" | The digest is the seller's **claim**: a binding commitment, not an attestation (no TEE). Lying is attributable, not impossible. |
 | "The check guarantees quality" | Format and arithmetic only (schema, totals). An invented vendor name passes. |
 | "Free prompts through `/start_job`?" | No. `/start_job` only creates a payment request; the model runs only after FundsLocked is **confirmed on-chain**, and `/status` returns the result only once ResultSubmitted is confirmed. It is rate-limited (60/min, 20 open). |
-| "Free answers through Sokosumi Tasks?" | **Yes, by design, in three cases** (see section 7, risk R5): paid jobs not enabled, enabled but registration not yet confirmed, or network = mainnet. In the Personal Workspace only you can create tasks; in an organization Workspace every member can. |
+| "Free answers through Sokosumi Tasks?" | **Yes, in two cases** (see section 7, risk R5): paid jobs not enabled, or network = mainnet (Tasks are preprod). With paid jobs on, new Tasks *wait* until the registration is confirmed instead of being answered for free. Follow-up comments on a Task are answered without payment, at most 3 per Task (`LOKAL_MAX_FOLLOWUPS`). In the Personal Workspace only you can create tasks. |
 | Prompt injection | The model has no tools; buyer input can't execute anything. |
 | Keys | Selling and purchasing wallets live in **our own** payment database (self-custody). Secrets go over stdin, never into logs. The uninstaller asks before deleting the wallets. |
 
@@ -183,7 +183,7 @@ Fresh install from the checkout: `LOKAL_SRC=$PWD LOKAL_NO_START=1 sh install.sh`
 | R2 | Failed-check paid task not proven | Run it: Sokosumi task with input that fails, e.g. the `fail-bad-total` sample |
 | R3 | Withdrawal not proven, but the video claims it | Wait for unlock (36 min after the paid task) and check the selling wallet, or change the video |
 | R4 | Wi-Fi at the booth | `--mock` fallback, explorer tabs open early, screenshots in evidence.md |
-| R5 | Sokosumi Tasks are answered for free when paid jobs aren't enabled or ready, or on mainnet | Personal Workspace: only you can create tasks. Keep the demo Coworker in the Personal Workspace |
+| R5 | Sokosumi Tasks are answered for free when paid jobs aren't enabled, or on mainnet; up to 3 free follow-ups per Task | Personal Workspace: only you can create tasks. Keep the demo Coworker in the Personal Workspace |
 | R6 | Coworker name taken on Sokosumi (409) | lokAl retries with a suffix; or `e` in step 3 |
 | R7 | Payment database stopped | lokald starts it again within 15 s; step 4 shows it red |
 | R8 | Sokosumi CLI must be exactly 1.1.0 | The installer pins it |

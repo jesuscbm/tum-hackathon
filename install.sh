@@ -95,7 +95,13 @@ if command -v sokosumi >/dev/null 2>&1 && sokosumi --version 2>/dev/null | grep 
   ok "Sokosumi CLI $SOKOSUMI_VERSION (already installed)"
 else
   say "Installing Sokosumi CLI $SOKOSUMI_VERSION"
-  "$NPM" install --global --prefix "$LOKAL_HOME/npm-global" "@masumi_network/sokosumi@$SOKOSUMI_VERSION" --no-audit --no-fund --loglevel=error >/dev/null || die "Sokosumi CLI install failed"
+  # From our lockfile (sokosumi-cli/), not `npm i -g`: a global install resolves the newest dependency versions,
+  # and one bad upstream release (cli-truncate 6.2.0, a 404 on 2026-10-31) breaks every fresh install.
+  CLI_DIR="$LOKAL_HOME/sokosumi-cli"
+  rm -rf "$CLI_DIR"; mkdir -p "$CLI_DIR" "$LOKAL_HOME/npm-global/bin"
+  cp "$APP/sokosumi-cli/package.json" "$APP/sokosumi-cli/package-lock.json" "$CLI_DIR/"
+  (cd "$CLI_DIR" && "$NPM" ci --omit=dev --no-audit --no-fund --loglevel=error) >/dev/null || die "Sokosumi CLI install failed"
+  ln -sf "$CLI_DIR/node_modules/.bin/sokosumi" "$LOKAL_HOME/npm-global/bin/sokosumi"
   ln -sf "$LOKAL_HOME/npm-global/bin/sokosumi" "$BIN_DIR/sokosumi"
   ok "Sokosumi CLI $SOKOSUMI_VERSION"
 fi
