@@ -108,7 +108,15 @@ Masumi Payment Service commit `a846392…` (`pay/mps.mjs`), Ollama `v0.40.13` (s
   (`templates/index.mjs` `priceFor/fundsFor`; ADA is the empty unit). Both paid paths use it: `agent-api.mjs`
   and `paid-task.mjs` (a Task checks the signed quote against what *it* requested, so a price change never
   breaks a Task in flight). Registration is `Dynamic`, so changing it needs no new registration.
-Not yet run for real: `lokal buy` (preprod or mainnet), any price other than 1 USDM (ADA prices on Sokosumi Tasks especially), the database watch on a live outage.
+- Workspace approval is per Sokosumi Coworker. Removing an extra Coworker (without retire) leaves its Sokosumi record
+  *spare*; `cw.spare()` lists owned, unused, unretired ones, and `add({reuse})` / `register ID --reuse` takes one over
+  (renamed, new runtime key, connect returns GRANTED, no new approval). The last access status per Coworker×Workspace is
+  kept in config.json `workspaceAccess` (`sk.rememberAccess`). `useWorkspace` now connects every local Coworker, not
+  only main. TUI: `a` on the Coworkers view offers spares first; CLI: `lokal coworker spare`, `add NAME --reuse [ID]`.
+  Setup step 3 `u` (`useExistingCoworker`, `steps/sokosumi.useCoworker`; CLI `lokal coworker use ID`) makes an owned,
+  unretired Sokosumi Coworker not used by an extra the main one: runtime key first, then COWORKER_ID, then a connect
+  if an organization Workspace is set; running main services restart. The previous main becomes spare.
+Not yet run for real: Coworker reuse against a real organization Workspace, `lokal buy` (preprod or mainnet), any price other than 1 USDM (ADA prices on Sokosumi Tasks especially), the database watch on a live outage.
 
 ## Status (2026-10-30, night): added, verified only with tests, mock and scratch folders
 - lokald + reattaching UI; `lokal up/down/daemon`; smoke test covers start/status/down.

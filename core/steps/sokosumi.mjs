@@ -4,6 +4,7 @@ import {log} from '../events.mjs';
 import {isHeadless,takeOpenedUrl,keychainLocked} from '../vault.mjs';
 import {hostname,userInfo} from 'node:os';
 import {loadTemplate} from '../../templates/index.mjs';
+import * as cw from '../coworkers.mjs';
 // Step 3: account → Vendor → Coworker → runtime key → Workspace. Reuses whatever already exists.
 export const id='sokosumi',title='Connect Sokosumi';
 // Over SSH there is no browser: sign in with an API key (pasted), or open the sign-in link on your laptop
@@ -34,7 +35,7 @@ export async function status(){
  const v=await sk.vendor();
  items.push({label:'Vendor',status:v?'ok':'todo',detail:v?`${v.name} (${v.slug})`:'lokAl creates one for you'});
  const coworkerId=env.COWORKER_ID;
- items.push({label:'Coworker',status:coworkerId?'ok':'todo',detail:coworkerId?`${cfg.coworkerName??''} ${coworkerId} · press e to rename`.trim():`lokAl registers "${plannedName(user)}" · press e to choose the name`});
+ items.push({label:'Coworker',status:coworkerId?'ok':'todo',detail:coworkerId?`${cfg.coworkerName??''} ${coworkerId} · press e to rename, u to switch`.trim():`lokAl registers "${plannedName(user)}" · press e to choose the name, u to use one you already have`});
  const keyOk=!!coworkerId&&(cfg.keyImported===coworkerId||cfg.keyImported===undefined&&!!coworkerId);
  items.push({label:'Runtime key',status:keyOk?'ok':'todo',detail:keyOk?'stored in the CLI vault':'imported straight into the CLI vault'});
  const ws=env.SOKOSUMI_ORGANIZATION_SLUG;
@@ -66,6 +67,31 @@ export async function run(){
  }
  return status();
 }
+// An existing Sokosumi Coworker you own becomes the main one instead of a new registration: during setup, or to
+// switch later (the previous one becomes spare). Its Workspace approvals carry over. External writes (a new runtime
+// key, a Workspace connect): callers confirm first. Pick from coworkers.spare().
+export async function useCoworker(coworkerId){
+ const s=await status();
+ if(!s.user)throw new Error('Sign in to Sokosumi first');
+ const c=(await sk.ownedCoworkers()).find(x=>x.id===coworkerId);
+ if(!c)throw new Error(`Sokosumi Coworker ${coworkerId} is not one you own`);
+ if(sk.retired(c))throw new Error(`${c.name} is retired`);
+ const extra=cw.list().find(x=>!x.primary&&x.coworkerId===coworkerId);
+ if(extra)throw new Error(`${c.name} is already served here by the Coworker "${extra.name}"`);
+ const vendorId=c.vendorId??c.vendor?.id??s.vendor?.id;
+ if(!vendorId)throw new Error('No Vendor: press enter in step 3 first so lokAl can find or create it');
+ // The key first: COWORKER_ID only points at a Coworker this machine can run.
+ await sk.importRuntimeKey(coworkerId);
+ writeEnv({COWORKER_ID:coworkerId});saveConfig({coworkerName:c.name??coworkerId,vendorId,keyImported:coworkerId});
+ log('sokosumi',`Using the existing Coworker ${c.name??''} (${coworkerId}); runtime key imported`);
+ const env=readEnv();let access=null;
+ if(env.SOKOSUMI_ORGANIZATION_ID){
+  const r=await sk.connectWorkspace({coworkerId,vendorId,organizationId:env.SOKOSUMI_ORGANIZATION_ID}).catch(e=>({error:e.message}));
+  access=r.error?'FAILED':r.access??'GRANTED';
+  log('sokosumi',r.error?`Workspace connect failed: ${r.error}`:`Workspace ${env.SOKOSUMI_ORGANIZATION_SLUG}: access ${access}`);
+ }
+ return {...await status(),access,name:c.name??coworkerId};
+}
 // Before registration: the name to register with. After: renames the Coworker on Sokosumi (external write).
 export async function setName(name){
  const n=String(name??'').trim();if(!n||n.length>80)throw new Error('A name has 1 to 80 characters');
@@ -74,13 +100,14 @@ export async function setName(name){
  saveConfig({coworkerName:n});
  return status();
 }
-// Which Workspace's tasks the Coworker serves: 'personal', or an organization's slug/id from status().workspaces.
-// An organization needs a Workspace connect (an external write: the UI and CLI confirm it first).
-// PENDING means an admin of that organization must approve.
+// Which Workspace's tasks the Coworkers serve: 'personal', or an organization's slug/id from status().workspaces.
+// An organization needs a Workspace connect (an external write: the UI and CLI confirm it first) for every
+// Coworker on this machine. PENDING means an admin of that organization must approve; Coworkers that were
+// approved before come back GRANTED at once, and new extra Coworkers can reuse them (coworkers.spare()).
 export async function useWorkspace(slugOrId){
  if(!slugOrId||slugOrId==='personal'){
   writeEnv({SOKOSUMI_ORGANIZATION_ID:'',SOKOSUMI_ORGANIZATION_SLUG:''});
-  log('sokosumi','Using the Personal Workspace. Restart services to pick it up.');return {pending:false,org:null};
+  log('sokosumi','Using the Personal Workspace. Restart services to pick it up.');return {pending:false,org:null,coworkers:[]};
  }
  const s=await status();
  if(!s.coworkerId||!s.vendor)throw new Error('Create the Coworker first: press enter in setup step 3 (or lokal run sokosumi).');
@@ -88,9 +115,15 @@ export async function useWorkspace(slugOrId){
  const org=orgs.find(o=>o.slug===slugOrId||o.organizationId===slugOrId);
  if(!org)throw new Error(orgs.length?`No organization Workspace "${slugOrId}". Yours: ${orgs.map(o=>o.slug).join(', ')}`:'You are not a member of any organization Workspace. Join one with its invitation link first.');
  const r=await sk.connectWorkspace({coworkerId:s.coworkerId,vendorId:s.vendor.id,organizationId:org.organizationId});
- const access=r.connect?.access?.status??r.connect?.workspaceAccess?.status??r.connect?.status;
- if(access&&access!=='GRANTED'){log('sokosumi',`Workspace access is ${access}: ask a ${org.name} admin to approve, then choose it again.`);return {pending:true,access,org};}
+ const out=[{id:'main',name:s.coworkerName??'main',access:r.access??'GRANTED'}];
+ for(const c of cw.list())if(!c.primary&&c.coworkerId){
+  const x=await sk.connectWorkspace({coworkerId:c.coworkerId,vendorId:s.vendor.id,organizationId:org.organizationId}).catch(e=>({access:'FAILED',error:e.message}));
+  out.push({id:c.id,name:c.name,access:x.access??'GRANTED',error:x.error});
+  log('sokosumi',x.error?`${c.name}: Workspace connect failed: ${x.error}`:`${c.name}: Workspace access ${x.access??'GRANTED'}`);
+ }
+ const waiting=out.filter(c=>c.access!=='GRANTED');
+ if(r.access&&r.access!=='GRANTED'){log('sokosumi',`Workspace access is ${r.access}: ask a ${org.name} admin to approve, then choose it again.`);return {pending:true,access:r.access,org,coworkers:out};}
  writeEnv({SOKOSUMI_ORGANIZATION_ID:org.organizationId,SOKOSUMI_ORGANIZATION_SLUG:org.slug});
- log('sokosumi',`Using Workspace ${org.name}. Restart services to pick it up.`);
- return {pending:false,org};
+ log('sokosumi',`Using Workspace ${org.name}${waiting.length?` (still waiting for approval: ${waiting.map(c=>c.name).join(', ')})`:''}. Restart services to pick it up.`);
+ return {pending:false,org,coworkers:out,waiting:waiting.map(c=>c.name)};
 }

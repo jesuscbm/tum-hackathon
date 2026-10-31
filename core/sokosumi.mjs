@@ -2,6 +2,7 @@ import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {json,run,which} from './exec.mjs';
 import {log} from './events.mjs';
+import {loadConfig,saveConfig} from './config.mjs';
 // Thin wrapper over the pinned Sokosumi CLI (Preprod). Secrets never touch our logs.
 export const CLI_VERSION='1.1.0';
 const cli=(args,opts={})=>json('sokosumi',['--preprod',...args,'--json'],{source:'sokosumi',quiet:true,timeout:60000,...opts});
@@ -32,6 +33,7 @@ export async function loginWithKey(key){
 export const API_KEY_PAGE='https://preprod.sokosumi.com/connections';
 export async function vendor(){const r=await cli(['vendors','me']);const v=r.data?.vendors??r.data?.vendor??r.data;return Array.isArray(v)?v[0]??null:v??null;}
 export async function createVendor(name,slug){const r=await cli(['vendors','create','--name',name,'--slug',slug]);if(!r.ok)throw new Error(firstLine(r));return r.data.vendor??r.data;}
+export const retired=c=>/\(retired\)$/i.test(c?.name??'');
 export async function ownedCoworkers(){const r=await cli(['coworkers','list','--scope','owned']);return r.data?.coworkers??[];}
 // Sokosumi derives a Coworker's slug from its name, and slugs are unique across all users. On a clash (409) the
 // Coworker is not created; retry with a short suffix ("Invoice reader 7f3a") instead of failing.
@@ -60,11 +62,22 @@ export async function importRuntimeKey(coworkerId){
  if(r.code!==0)throw new Error('Key import failed: '+firstLine(r));
  return true;
 }
+// Access is per Coworker and Workspace: a connect on a Coworker that is already GRANTED returns GRANTED again
+// (no new approval request). The last status seen is kept in config.json, so lokAl can offer approved
+// Coworkers for reuse instead of registering new ones that each wait for an admin.
+export const accessStatus=connect=>connect?.workspaceAccess?.status??connect?.access?.status??connect?.status??null;
+export const knownAccess=(coworkerId,organizationId)=>loadConfig().workspaceAccess?.[coworkerId]?.[organizationId]??null;
+export function rememberAccess(coworkerId,organizationId,status){
+ if(!coworkerId||!organizationId||!status)return;
+ const all=loadConfig().workspaceAccess??{};
+ saveConfig({workspaceAccess:{...all,[coworkerId]:{...all[coworkerId],[organizationId]:status}}});
+}
 export async function connectWorkspace({coworkerId,vendorId,organizationId}){
  const r=await cli(['coworkers','connect',coworkerId,'--vendor-id',vendorId,'--workspace-id',organizationId]);
  if(!r.ok)throw new Error(firstLine(r));
+ const access=accessStatus(r.data);rememberAccess(coworkerId,organizationId,access);
  const c=await cli(['workspaces','check',organizationId]);
- return {connect:r.data,check:c.data};
+ return {connect:r.data,check:c.data,access};
 }
 export async function workspaces(){const r=await cli(['workspaces','list']);return r.data?.workspaces??r.data?.organizations??[];}
 export async function createTask({coworkerId,name,description,organizationSlug}){

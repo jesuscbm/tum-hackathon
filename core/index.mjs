@@ -64,6 +64,7 @@ export function createCore(){
   // step 3: Sokosumi (browser, or API key / sign-in link when headless)
   async setCoworkerName(name,cid='main'){if(cid==='main')return sokosumi.setName(name);return cw.rename(cid,name)},
   login:sokosumi.login,loginWithKey:sokosumi.loginWithKey,useWorkspace:sokosumi.useWorkspace,
+  async useExistingCoworker(id){const r=await sokosumi.useCoworker(id);await applyJob('main',['agent','worker','api']);return r},
   // step 4: payments
   setValue:pay.setValue,setNetwork:pay.setNetwork,network:()=>networkOf(readEnv()).id,
   runPay:()=>runStep('pay',{startMps:()=>services.start('mps'),restartMps:()=>services.restart('mps')}),
@@ -89,7 +90,7 @@ export function createCore(){
    return daemon.subscribe(e=>{if(e.type==='log')ingest(e.data);else bus.emit(e.type,e.data)});
   },
   // Coworkers: several prompts/jobs served side by side
-  coworkers:()=>cw.list().map(({env,...c})=>c),
+  coworkers:()=>cw.list().map(({env,...c})=>c),spareCoworkers:cw.spare,
   async addCoworker(opts){const c=await cw.add(opts);if(c.coworkerId&&(await daemon.status()).running)await services.startAll();const {env,...rest}=c;return rest;},
   async removeCoworker(id,opts){await services.stopCoworker(id);return cw.remove(id,opts).map(({env,...c})=>c);},
   async setCoworkerTemplate(id,t){if(id==='main')await job.select(t);else cw.setTemplate(id,t);await applyJob(id);const {env,...c}=cw.get(id);return c;},

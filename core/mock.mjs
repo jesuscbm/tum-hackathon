@@ -8,6 +8,7 @@ export function createMockCore(){
  const bus=new EventEmitter();const logs=[];
  const log=(source,line)=>{const e={type:'log',source,line,at:Date.now()};logs.push(e);bus.emit('log',e)};
  const st={machine:0,job:null,sokosumi:false,pay:0,live:false,jobs:[],net:'preprod',daemon:null,model:'llama3.2:3b',backend:'ollama',
+  spare:[{id:'cw_old_demo',name:'Old summary · lokAl'}],
   coworkers:[{id:'main',name:'main',primary:true,template:null,coworkerId:null,paid:false,ports:{eve:21949,api:21950},dir:'~/.local/share/lokal/app/coworker'}]};
  const headless=!!(process.env.SSH_CONNECTION||process.env.LOKAL_HEADLESS==='1');
  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -27,7 +28,7 @@ export function createMockCore(){
    it('Price','ok',st.price?`${st.price} per job (your price)`:"1 USDM per job (the job's default) · press p to change"),it('Tried it',!!st.tried,st.tried??'try a sample before going live')]}),
   sokosumi:()=>({id:'sokosumi',title:'Connect Sokosumi',status:st.sokosumi?'ok':'todo',headless,signIn:st.signIn&&!st.sokosumi?{url:'https://api.preprod.sokosumi.com/auth/oauth2/authorize?client_id=demo&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Foauth%2Fcallback',tunnel:'ssh -N -L 53682:127.0.0.1:53682 you@server'}:null,items:[
    it('Sokosumi CLI','ok','v1.1.0'),st.sokosumi?it('Account','ok','you@example.com'):headless?it('Account','input','no browser on this machine: paste a Sokosumi API key, or press b for a sign-in link',{input:{key:'SOKOSUMI_API_KEY',label:'Sokosumi API key (starts with soko_preprod_)',secret:true}}):it('Account','action','sign in once in your browser',{command:'sokosumi --preprod auth login'}),
-   it('Vendor',st.sokosumi,st.sokosumi?'you (lokal-you)':'lokAl creates one for you'),it('Coworker',st.sokosumi,st.sokosumi?`${st.coworkerName??'Invoice → JSON by you'} cw_main_demo · press e to rename`:`lokAl registers "${st.coworkerName??'Invoice → JSON by you'}" · press e to choose the name`),
+   it('Vendor',st.sokosumi,st.sokosumi?'you (lokal-you)':'lokAl creates one for you'),it('Coworker',st.sokosumi,st.sokosumi?`${st.coworkerName??'Invoice → JSON by you'} cw_main_demo · press e to rename, u to switch`:`lokAl registers "${st.coworkerName??'Invoice → JSON by you'}" · press e to choose the name, u to use one you already have`),
    it('Runtime key',st.sokosumi,st.sokosumi?'stored in the CLI vault':'imported straight into the CLI vault'),it('Workspace','ok',st.workspace?'Example Org (organization) · press o to change':'Personal Workspace (private testing) · press o to use Example Org')],
    user:st.sokosumi?{email:'you@example.com'}:null,coworkerId:st.sokosumi?'cw_main_demo':null,coworkerName:st.coworkerName??null,workspace:st.workspace??'personal',workspaces:[{id:'personal',name:'Personal Workspace',hint:'private: only you can send it tasks'},{id:'example-org',name:'Example Org',hint:'organization · example-org'}]}),
   pay:()=>({id:'pay',title:'Get paid',status:st.pay>=4?'ok':'todo',network:st.net,wallet:{address:st.pay>=1?W:null,balance:st.pay>=2?{ada:10000,usdm:0}:{ada:0,usdm:0},faucet:'https://dispenser.masumi.network/'},items:[
@@ -70,7 +71,8 @@ export function createMockCore(){
   async stopDaemon(){st.daemon=null;st.live=false;return true},
   async attach(){return ()=>{}},
   coworkers:()=>st.coworkers.map(c=>c.primary?{...c,template:st.job,coworkerId:st.sokosumi?'cw_main_demo':null,paid:st.pay>=4,price:st.price??'1 USDM'}:c),
-  async addCoworker({name,template}){await prog('coworker',`Registering ${name} on Sokosumi`,800);const id=name.toLowerCase().replace(/[^a-z0-9]+/g,'-');const n=st.coworkers.length;const c={id,name,primary:false,template,coworkerId:`cw_${id}`,paid:false,ports:{eve:21949+2*n,api:21950+2*n},dir:`~/.local/share/lokal/coworkers/${id}`};st.coworkers.push(c);log('coworkers',`Registered Coworker ${name}`);return c},
+  async spareCoworkers(){const used=new Set(st.coworkers.map(c=>c.coworkerId));return st.spare.filter(c=>!used.has(c.id)).map(c=>({...c,access:st.workspace?'GRANTED':null,granted:!!st.workspace}))},
+  async addCoworker({name,template,reuse}){await prog('coworker',reuse?`Reusing ${reuse} for ${name}`:`Registering ${name} on Sokosumi`,800);const id=name.toLowerCase().replace(/[^a-z0-9]+/g,'-');const n=st.coworkers.length;const c={id,name,primary:false,template,coworkerId:reuse??`cw_${id}`,paid:false,ports:{eve:21949+2*n,api:21950+2*n},dir:`~/.local/share/lokal/coworkers/${id}`};st.coworkers.push(c);log('coworkers',`${reuse?'Reused':'Registered'} Coworker ${name}`);return {...c,access:st.workspace?(reuse?'GRANTED':'PENDING'):null}},
   async removeCoworker(id){st.coworkers=st.coworkers.filter(c=>c.id!==id||c.primary);log('coworkers',`Removed ${id}`);return st.coworkers},
   async setCoworkerTemplate(id,t){const c=st.coworkers.find(c=>c.id===id);if(c.primary)st.job=t;else c.template=t;return c},
   async registerCoworkerOnSokosumi(id){return st.coworkers.find(c=>c.id===id)},async registerCoworkerPaid(id){const c=st.coworkers.find(c=>c.id===id);if(c)c.paid=true;return c},
@@ -78,7 +80,8 @@ export function createMockCore(){
   login(){if(headless)st.signIn=true;log('sokosumi',headless?'Started the Sokosumi sign-in':'Opened Sokosumi login in your browser')},
   async setCoworkerName(name,cid='main'){if(cid==='main'){st.coworkerName=name;return statusOf.sokosumi()}const c=st.coworkers.find(c=>c.id===cid);if(c)c.name=name;return c},
   async setPrice(v){st.price=v?parsePrice(v).display:null;return st.price?{...parsePrice(st.price),own:true}:parsePrice(1)},
-  async useWorkspace(id){st.workspace=id==='personal'?null:id;return {pending:false,org:id==='personal'?null:{name:'Example Org',slug:id}}},
+  async useExistingCoworker(id){const c=st.spare.find(x=>x.id===id);if(!c)throw new Error(`Sokosumi Coworker ${id} is not one you own`);st.sokosumi=true;st.coworkerName=c.name;log('sokosumi',`Using the existing Coworker ${c.name}`);return {...statusOf.sokosumi(),access:st.workspace?'GRANTED':null,name:c.name}},
+  async useWorkspace(id){st.workspace=id==='personal'?null:id;return {pending:false,org:id==='personal'?null:{name:'Example Org',slug:id},coworkers:[],waiting:[]}},
   async setValue(key){if(key==='BLOCKFROST_API_KEY_PREPROD')st.bf=true;return statusOf.pay()},
   runPay(){return this.runStep('pay')},
   async sendTestJob(i=0){

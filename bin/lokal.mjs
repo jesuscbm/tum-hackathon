@@ -5,7 +5,7 @@ const [cmd,...args]=process.argv.slice(2);
 const mock=process.env.LOKAL_MOCK==='1'||args.includes('--mock')||cmd==='--mock';
 const flag=f=>args.includes(f);
 const opt=f=>{const i=args.indexOf(f);return i>=0?args[i+1]:undefined};
-const pos=args.filter((a,i)=>!a.startsWith('--')&&!(i>0&&['--template','--prompt','--out','--model','--coworker','--nonce','--file'].includes(args[i-1])));
+const pos=args.filter((a,i)=>!a.startsWith('--')&&!(i>0&&['--template','--prompt','--out','--model','--coworker','--nonce','--file','--reuse'].includes(args[i-1])));
 const HELP=`lokAl: your local LLM, hired and paid on Cardano
 
   lokal              open the setup wizard / dashboard (terminal UI); services keep running when you quit
@@ -25,8 +25,11 @@ const HELP=`lokAl: your local LLM, hired and paid on Cardano
   lokal sokosumi …   the Sokosumi CLI, with lokAl's keyring stand-in (for SSH servers)
   lokal prompt add FILE.md | list
                      add a job written in Markdown (front matter: name, check, price; body: the prompt)
-  lokal coworker list | add NAME [--template ID | --prompt FILE.md] [--yes] | rename [ID] NAME | remove ID [--retire] | paid ID
-                     serve several jobs side by side, each as its own Sokosumi Coworker
+  lokal coworker list | add NAME [--template ID | --prompt FILE.md] [--reuse [SOKOSUMI_ID]] [--yes] | spare
+               | use SOKOSUMI_ID [--yes] | register ID [--reuse [SOKOSUMI_ID]] | rename [ID] NAME | remove ID [--retire] | paid ID
+                     serve several jobs side by side, each as its own Sokosumi Coworker; --reuse takes over a
+                     spare one (left by a removed Coworker) and keeps its Workspace approval; use makes an
+                     existing Sokosumi Coworker the main one (during setup: before lokal run sokosumi)
   lokal network [preprod | mainnet]
                      show or switch the Cardano network (mainnet moves real money)
   lokal wallet [export [--out FILE]]
@@ -54,6 +57,13 @@ async function readSecret(label,{allowEmpty=false}={}){
  v=v.trim();if(!v&&!allowEmpty)die(`${label}: nothing entered`);return v;
 }
 async function ask(q){process.stdout.write(q);let v='';for await(const ch of process.stdin){v+=ch;if(v.includes('\n'))break;}return v.trim();}
+// --reuse ID takes that spare Sokosumi Coworker; a bare --reuse takes the best one (approved in the Workspace first).
+async function reuseArg(c){
+ if(!flag('--reuse'))return undefined;
+ const v=opt('--reuse');if(v&&!v.startsWith('--'))return v;
+ const l=await c.spareCoworkers();if(!l.length)die('No spare Sokosumi Coworker to reuse (lokal coworker spare lists them)');
+ return l[0].id;
+}
 const printStep=st=>{console.log(`\n${ICON[st.status]??'○'} ${st.title}${st.error?`  (${st.error})`:''}`);for(const i of st.items??[])console.log(`   ${ICON[i.status]??'○'} ${i.label.padEnd(18)} ${i.detail}${i.command?`\n     → ${i.command}`:''}`);};
 const followLogs=c=>{c.bus.on('log',e=>{if(e.level!=='debug')console.log(`[${e.source}] ${e.line}`)});c.bus.on('services',s=>console.log('services: '+s.map(x=>`${x.id}=${x.status}${x.external?'(external)':''}`).join(' ')));};
 
@@ -187,9 +197,10 @@ else if(cmd==='workspace'||cmd==='workspaces'){
  }
  if(to!=='personal'&&!flag('--yes')&&!mock){
   if(!process.stdin.isTTY)die('Connecting the Coworker to a Workspace writes to Sokosumi: pass --yes to confirm',2);
-  if(!/^y/i.test(await ask(`Connect your Coworker to the Workspace ${to}? Its members can then send it tasks. [y/N] `)))process.exit(1);
+  if(!/^y/i.test(await ask(`Connect your Coworkers to the Workspace ${to}? Its members can then send them tasks. [y/N] `)))process.exit(1);
  }
- try{const r=await c.useWorkspace(to);console.log(r.pending?`… Waiting for a ${r.org.name} admin to approve (${r.access}). Run this again afterwards.`:`✔ Workspace: ${r.org?.name??'Personal Workspace'}. Restart services to apply: lokal down && lokal up`);}catch(e){die(e.message)}
+ try{const r=await c.useWorkspace(to);for(const x of r.coworkers??[])console.log(`  ${x.name.padEnd(28)} ${x.error?`failed: ${x.error}`:x.access}`);
+  console.log(r.pending?`… Waiting for a ${r.org.name} admin to approve (${r.access}). Run this again afterwards.`:`✔ Workspace: ${r.org?.name??'Personal Workspace'}${r.waiting?.length?` (still waiting for approval: ${r.waiting.join(', ')})`:''}. Restart services to apply: lokal down && lokal up`);}catch(e){die(e.message)}
  process.exit(0);
 }
 else if(cmd==='prompt'){
@@ -205,10 +216,11 @@ else if(cmd==='coworker'||cmd==='coworkers'){
    const name=pos[1];if(!name)die('usage: lokal coworker add NAME [--template ID | --prompt FILE.md] [--yes]',2);
    let template=opt('--template')??'freeform';
    if(opt('--prompt')){const {importMarkdown}=await import('../templates/index.mjs');template=importMarkdown(resolve(opt('--prompt'))).id;}
-   if(!flag('--yes')&&!mock){if(!process.stdin.isTTY)die('Creating a Coworker writes to Sokosumi: pass --yes to confirm');if(!/^y/i.test(await ask(`Create the Sokosumi Coworker "${name}" (job: ${template})? [y/N] `)))process.exit(1);}
+   const reuse=await reuseArg(c);
+   if(!flag('--yes')&&!mock){if(!process.stdin.isTTY)die('Creating a Coworker writes to Sokosumi: pass --yes to confirm');if(!/^y/i.test(await ask(reuse?`Reuse the Sokosumi Coworker ${reuse} as "${name}" (job: ${template})? It is renamed on Sokosumi. [y/N] `:`Create the Sokosumi Coworker "${name}" (job: ${template})? [y/N] `)))process.exit(1);}
    c.bus.on('log',e=>e.source==='coworkers'&&console.log(`  ${e.line}`));
-   const x=await c.addCoworker({name,template});
-   console.log(`✔ Coworker ${x.name} (${x.id})${x.coworkerId?` · Sokosumi ${x.coworkerId}`:' · not on Sokosumi yet'}\n  folder ${x.dir}\n  start it with: lokal up`);
+   const x=await c.addCoworker({name,template,reuse});
+   console.log(`✔ Coworker ${x.name} (${x.id})${x.coworkerId?` · Sokosumi ${x.coworkerId}`:' · not on Sokosumi yet'}${x.access&&x.access!=='GRANTED'?`\n  Workspace access ${x.access}: an admin must approve it`:''}\n  folder ${x.dir}\n  start it with: lokal up`);
   }
   else if(sub==='remove'||sub==='rm'){
    const id=pos[1];if(!id)die('usage: lokal coworker remove ID [--retire]',2);
@@ -216,7 +228,17 @@ else if(cmd==='coworker'||cmd==='coworkers'){
    await c.removeCoworker(id,{retire:flag('--retire')});console.log(`✔ Removed ${id}`);
   }
   else if(sub==='paid'){const id=pos[1];if(!id)die('usage: lokal coworker paid ID',2);await c.registerCoworkerPaid(id);console.log(`✔ Registration for ${id} submitted; lokal info shows its state`);}
-  else if(sub==='register'){const x=await c.registerCoworkerOnSokosumi(pos[1]);console.log(`✔ ${x.name}: Sokosumi ${x.coworkerId}`);}
+  else if(sub==='register'){const reuse=await reuseArg(c);const x=await c.registerCoworkerOnSokosumi(pos[1],{reuse});console.log(`✔ ${x.name}: Sokosumi ${x.coworkerId}${x.access&&x.access!=='GRANTED'?` · Workspace access ${x.access}`:''}`);}
+  else if(sub==='use'){
+   const id=pos[1];if(!id)die('usage: lokal coworker use SOKOSUMI_ID [--yes]   (lokal coworker spare lists yours)',2);
+   if(!flag('--yes')&&!mock){if(!process.stdin.isTTY)die('This creates a runtime key on Sokosumi: pass --yes to confirm',2);if(!/^y/i.test(await ask(`Serve the Sokosumi Coworker ${id} as the main Coworker on this machine? [y/N] `)))process.exit(1);}
+   const r=await c.useExistingCoworker(id);
+   console.log(`✔ Main Coworker: ${r.name} (${id})${r.access&&r.access!=='GRANTED'?`\n  Workspace access ${r.access}: an admin must approve it`:''}`);
+  }
+  else if(sub==='spare'){
+   const l=await c.spareCoworkers();if(!l.length)console.log('No spare Sokosumi Coworkers: every one you own is in use here or retired.');
+   for(const x of l)console.log(`${x.id.padEnd(28)} ${x.name}${x.granted?'  · approved in this Workspace':x.access?`  · ${x.access.toLowerCase()}`:''}`);
+  }
   else if(sub==='rename'){
    const [id,name]=pos.length>2?[pos[1],pos.slice(2).join(' ')]:['main',pos[1]];
    if(!name)die('usage: lokal coworker rename [ID] NAME   (ID defaults to main)',2);

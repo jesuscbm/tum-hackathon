@@ -50,16 +50,51 @@ export function linkCode(dir){
  copyFileSync(join(COWORKER_DIR,'package.json'),join(dir,'package.json'));
  copyFileSync(join(COWORKER_DIR,'agent','agent.ts'),join(dir,'agent','agent.ts'));
 }
-// Creates the folder and (with register) the Coworker on Sokosumi: an external write, so callers confirm first.
-export async function add({name,template,register=true}){
+// Sokosumi Coworkers you own that no Coworker on this machine uses (e.g. left by a removed one) and that are not
+// retired. Reusing one keeps its Workspace approvals, so an organization Workspace needs no new admin approval.
+// granted: last connect to main's Workspace came back GRANTED (sorted first).
+export async function spare(){
+ const used=new Set(list().map(c=>c.coworkerId).filter(Boolean));
+ const org=readEnv(join(COWORKER_DIR,'.env')).SOKOSUMI_ORGANIZATION_ID||null;
+ const owned=(await sk.ownedCoworkers()).filter(c=>c.id&&!used.has(c.id)&&!sk.retired(c));
+ return owned.map(c=>({id:c.id,name:c.name??c.id,access:org?sk.knownAccess(c.id,org):null,granted:!!org&&sk.knownAccess(c.id,org)==='GRANTED'}))
+  .sort((a,b)=>b.granted-a.granted);
+}
+// Gives a Coworker folder its Sokosumi Coworker: a reused one (renamed to this name) or a new registration,
+// then a runtime key and, when main serves an organization Workspace, a connect (GRANTED at once if approved before).
+async function attach(dir,name,t,{reuse,vendorId}){
+ const main=readEnv(join(COWORKER_DIR,'.env'));
+ const label=`${name} · lokAl`;
+ let c;
+ if(reuse){
+  const s=(await spare()).find(x=>x.id===reuse);
+  if(!s)throw new Error(`Sokosumi Coworker ${reuse} is not free to reuse (not yours, retired, or used by another Coworker here)`);
+  await sk.renameCoworker(reuse,label).catch(e=>log('coworkers',`Kept the old name on Sokosumi: ${e.message}`));
+  c={id:reuse,name:label};log('coworkers',`Reusing Sokosumi Coworker ${s.name} (${reuse}) as ${label}`);
+ }else{
+  c=await sk.registerCoworker({vendorId,name:label,description:t.description||'A model served with lokAl. Results are checked before payment.'});
+  log('coworkers',`Registered Coworker ${c.name} (${c.id}) on Sokosumi`);
+ }
+ writeEnv({COWORKER_ID:c.id},join(dir,'.env'));
+ await sk.importRuntimeKey(c.id);log('coworkers','Runtime key imported');
+ let access=null;
+ if(main.SOKOSUMI_ORGANIZATION_ID){
+  const r=await sk.connectWorkspace({coworkerId:c.id,vendorId,organizationId:main.SOKOSUMI_ORGANIZATION_ID}).catch(e=>({error:e.message}));
+  access=r.error?'FAILED':r.access??'GRANTED';
+  log('coworkers',r.error?`Workspace connect failed: ${r.error}`:access==='GRANTED'?`Connected to Workspace ${main.SOKOSUMI_ORGANIZATION_SLUG}`:`Workspace ${main.SOKOSUMI_ORGANIZATION_SLUG}: access ${access}, waiting for an admin to approve`);
+ }
+ return access;
+}
+const vendorOf=async()=>loadConfig().vendorId??(await sk.vendor())?.id;
+// Creates the folder and (with register) its Sokosumi Coworker: an external write, so callers confirm first.
+// reuse: the id of a spare() Sokosumi Coworker to take over instead of registering a new one.
+export async function add({name,template,register=true,reuse}){
  const id=slug(name);
  if(!ID.test(id)||id==='main')throw new Error('Name it with letters and digits (not "main")');
  const dir=join(EXTRA_DIR(),id);
  if(existsSync(join(dir,'.env')))throw new Error(`A Coworker called ${id} already exists`);
  const t=loadTemplate(template);
- const main=readEnv(join(COWORKER_DIR,'.env'));
- let vendorId=loadConfig().vendorId;
- if(register&&!vendorId){const v=await sk.vendor();vendorId=v?.id;}
+ const vendorId=register?await vendorOf():null;
  if(register&&!vendorId)throw new Error('Connect Sokosumi first (setup step 3): a new Coworker needs your Vendor');
  const ports=freePorts();
  linkCode(dir);
@@ -70,28 +105,20 @@ export async function add({name,template,register=true}){
  // Shared selling wallet: registration for this Coworker reuses main's payment source and wallet.
  const ps=join(COWORKER_DIR,'docs','payment-state.json');if(existsSync(ps))copyFileSync(ps,join(dir,'docs','payment-state.json'));
  log('coworkers',`Created ${dir}`);
+ let access=null;
  if(register){
-  try{
-   const c=await sk.registerCoworker({vendorId,name:`${name} · lokAl`,description:t.description||'A model served with lokAl. Results are checked before payment.'});
-   writeEnv({COWORKER_ID:c.id},join(dir,'.env'));log('coworkers',`Registered Coworker ${c.name} (${c.id}) on Sokosumi`);
-   await sk.importRuntimeKey(c.id);log('coworkers','Runtime key imported');
-   if(main.SOKOSUMI_ORGANIZATION_ID){
-    const r=await sk.connectWorkspace({coworkerId:c.id,vendorId,organizationId:main.SOKOSUMI_ORGANIZATION_ID}).catch(e=>({error:e.message}));
-    log('coworkers',r.error?`Workspace connect failed: ${r.error}`:`Connected to Workspace ${main.SOKOSUMI_ORGANIZATION_SLUG}`);
-   }
-  }catch(e){log('coworkers',`Sokosumi registration failed: ${e.message}. Retry with: lokal coworker register ${id}`,'error');}
+  try{access=await attach(dir,name,t,{reuse,vendorId});}
+  catch(e){log('coworkers',`Sokosumi ${reuse?'reuse':'registration'} failed: ${e.message}. Retry with: lokal coworker register ${id}${reuse?` --reuse ${reuse}`:''}`,'error');}
  }
- return get(id);
+ return {...get(id),access};
 }
-// Registers an existing folder that has no Sokosumi Coworker yet (e.g. after a failed add).
-export async function registerOnSokosumi(id){
+// Gives an existing folder without a Sokosumi Coworker one (e.g. after a failed add): new, or reuse a spare one.
+export async function registerOnSokosumi(id,{reuse}={}){
  const c=get(id);if(!c||c.primary)throw new Error(`No extra Coworker ${id}`);
  if(c.coworkerId)return c;
- const t=loadTemplate(c.template||'freeform');
- const vendorId=loadConfig().vendorId??(await sk.vendor())?.id;if(!vendorId)throw new Error('Connect Sokosumi first');
- const r=await sk.registerCoworker({vendorId,name:`${c.name} · lokAl`,description:t.description||'A model served with lokAl.'});
- writeEnv({COWORKER_ID:r.id},join(c.dir,'.env'));await sk.importRuntimeKey(r.id);
- return get(id);
+ const vendorId=await vendorOf();if(!vendorId)throw new Error('Connect Sokosumi first');
+ const access=await attach(c.dir,c.name,loadTemplate(c.template||'freeform'),{reuse,vendorId});
+ return {...get(id),access};
 }
 // New display name, locally and on Sokosumi (an external write: callers confirm it first).
 export async function rename(id,name){

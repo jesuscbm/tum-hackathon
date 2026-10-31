@@ -110,7 +110,7 @@ function SokosumiPanel({s}){
    <${Text} color=${C.accent2} wrap="wrap">${link(s.signIn.url)}</${Text}>
    <${Text} color=${C.dim} wrap="wrap">Also in ~/.local/share/lokal/logs/lokal.log, or run \`lokal sokosumi --preprod auth login\` for it on one line. lokAl notices the sign-in on its own.</${Text}>
   </${Card}>`:null}
-  <${Hints} keys=${[['enter',s.status==='ok'?'re-check':signedOut&&s.headless?'paste API key':'connect'],...(signedOut&&s.headless?[['b','sign-in link']]:[]),...(s.user?[['e',s.coworkerId?'rename Coworker':'choose its name']]:[]),...(s.workspaces?.length>1?[['o','choose Workspace']]:[])]}/>
+  <${Hints} keys=${[['enter',s.status==='ok'?'re-check':signedOut&&s.headless?'paste API key':'connect'],...(signedOut&&s.headless?[['b','sign-in link']]:[]),...(s.user?[['e',s.coworkerId?'rename Coworker':'choose its name'],['u',s.coworkerId?'switch Coworker':'use existing']]:[]),...(s.workspaces?.length>1?[['o','choose Workspace']]:[])]}/>
  </${Box}>`;
 }
 function PayPanel({s,ui,qr}){
@@ -315,9 +315,20 @@ export function App({core}){
   const ts=core.templates();
   pick(title,ts.map(t=>({id:t.id,label:t.name,hint:`${t.check?.type??'none'}${t.custom?' · custom':''}`})),it=>onPick(it.id),Math.max(0,ts.findIndex(t=>t.id===current)));
  }
+ // A spare Sokosumi Coworker (left by a removed one) keeps its Workspace approvals: offer it before a new one.
  function addCoworker(){
-  form('New Coworker',[{key:'name',label:'Name (e.g. Contract summary)'}],v=>templatePicker(`Job for ${v.name}`,tpl=>confirm(`Create the Sokosumi Coworker "${v.name}" doing ${tpl}? This registers it on Sokosumi under your Vendor.`,{
-   y:['create',()=>attempt(async()=>{const c=await core.addCoworker({name:v.name,template:tpl});setCws(core.coworkers());return c},c=>`✔ ${c.name} created${c.coworkerId?' and registered':' (not on Sokosumi yet)'}. ${daemon?.running?'Its services are starting.':'Start services with enter in step 5.'}`)]})));
+  form('New Coworker',[{key:'name',label:'Name (e.g. Contract summary)'}],v=>templatePicker(`Job for ${v.name}`,async tpl=>{
+   const sok=statuses.find(x=>x.id==='sokosumi');
+   const ws=sok?.workspace&&sok.workspace!=='personal'?(sok.workspaces?.find(w=>w.id===sok.workspace)?.name??sok.workspace):null;
+   const done=c=>`✔ ${c.name} ${c.coworkerId?(c.access&&c.access!=='GRANTED'?`created; waiting for a ${ws} admin to approve (${c.access})`:'created and registered'):'created (not on Sokosumi yet)'}. ${daemon?.running?'Its services are starting.':'Start services with enter in step 5.'}`;
+   const create=reuse=>attempt(async()=>{const c=await core.addCoworker({name:v.name,template:tpl,reuse});setCws(core.coworkers());return c},done);
+   const fresh=()=>confirm(`Create the Sokosumi Coworker "${v.name}" doing ${tpl}? This registers it on Sokosumi under your Vendor${ws?` and asks ${ws} for access (an admin approves it)`:''}.`,{y:['create',()=>create()]});
+   const spare=await core.spareCoworkers().catch(()=>[]);
+   if(!spare.length)return fresh();
+   pick(`Sokosumi Coworker for ${v.name}`,[...spare.map(c=>({id:c.id,name:c.name,label:`Reuse ${c.name}`,hint:ws?(c.granted?`already approved in ${ws}`:c.access?`${ws}: ${c.access.toLowerCase()}`:`not yet connected to ${ws}`):'unused by this machine'})),
+    {id:'new',label:'Register a new one',hint:ws?`needs a ${ws} admin to approve`:'a fresh Sokosumi Coworker'}],
+    it=>it.id==='new'?fresh():confirm(`Reuse the Sokosumi Coworker "${it.name}" for ${v.name} doing ${tpl}? It is renamed to "${v.name} · lokAl"${ws?` and keeps its ${ws} access`:''}.`,{y:['reuse',()=>create(it.id)]}));
+  }));
  }
 
  useInput(async(input,key)=>{
@@ -371,7 +382,7 @@ export function App({core}){
    if(c&&input==='t')attempt(()=>core.sendTestJob(0,c),r=>`✔ Test task ${String(r?.id??'').slice(0,8)} sent to ${c.name}`);
    if(c&&input==='p'&&!c.paid)confirm(`Register ${c.name} on the Masumi registry (${net}) so it can take paid jobs? This is an on-chain transaction from the selling wallet.`,{y:['register',()=>attempt(()=>core.registerCoworkerPaid(c.id),'✔ Registration submitted. It confirms in a few minutes.')]});
    if(c&&input==='x'){if(c.primary)flash('The main Coworker belongs to the setup wizard; it cannot be removed.');
-    else confirm(`Remove ${c.name}? Its processes stop and its folder is deleted. Its Sokosumi record stays unless you retire it (Sokosumi has no delete).`,{y:['remove',()=>attempt(async()=>{await core.removeCoworker(c.id);setCws(core.coworkers());setCsel(0)},`Removed ${c.name}`)],r:['remove + retire on Sokosumi',()=>attempt(async()=>{await core.removeCoworker(c.id,{retire:true});setCws(core.coworkers());setCsel(0)},`Removed and retired ${c.name}`)]});}
+    else confirm(`Remove ${c.name}? Its processes stop and its folder is deleted. Its Sokosumi record stays (with its Workspace approvals) and a new Coworker can reuse it, unless you retire it (Sokosumi has no delete).`,{y:['remove',()=>attempt(async()=>{await core.removeCoworker(c.id);setCws(core.coworkers());setCsel(0)},`Removed ${c.name}`)],r:['remove + retire on Sokosumi',()=>attempt(async()=>{await core.removeCoworker(c.id,{retire:true});setCws(core.coworkers());setCsel(0)},`Removed and retired ${c.name}`)]});}
    return;
   }
   if(view!=='wizard')return;
@@ -405,9 +416,17 @@ export function App({core}){
     const save=n=>attempt(()=>core.setCoworkerName(n),`✔ ${s.coworkerId?'Renamed to':'It will be registered as'} ${n}`);
     form('Coworker name',[{key:'n',label:'The name buyers see on Sokosumi (unique there)',initial:cur}],v=>s.coworkerId?confirm(`Rename your Coworker on Sokosumi to "${v.n}"?`,{y:['rename',()=>save(v.n)]}):save(v.n));
    }
+   if(input==='u'&&s.user)attempt(async()=>{
+    const ws=s.workspace&&s.workspace!=='personal'?(s.workspaces?.find(w=>w.id===s.workspace)?.name??s.workspace):null;
+    const l=await core.spareCoworkers();
+    if(!l.length)throw new Error('No other Sokosumi Coworker of yours is free: each one is used here or retired');
+    pick(s.coworkerId?'Switch the main Coworker to':'Use an existing Sokosumi Coworker',l.map(c=>({id:c.id,name:c.name,label:c.name,hint:`${c.id}${ws?(c.granted?` · approved in ${ws}`:c.access?` · ${ws}: ${c.access.toLowerCase()}`:` · not yet connected to ${ws}`):''}`})),
+     it=>confirm(`Serve the Sokosumi Coworker "${it.name}" from this machine? lokAl creates a new runtime key for it${ws?` and connects it to ${ws}`:''}.${s.coworkerId?' The current one stays on Sokosumi as a spare.':''} Run it on one machine only.`,
+      {y:['use it',()=>attempt(()=>core.useExistingCoworker(it.id),r=>`✔ Main Coworker: ${r.name}${r.access&&r.access!=='GRANTED'?` · waiting for a ${ws} admin (${r.access})`:''}${daemon?.running?'. Its services were restarted.':''}`)]}));
+   });
    if(input==='o'&&s.workspaces?.length>1){
-    const use=w=>attempt(()=>core.useWorkspace(w.id),r=>r.pending?`Waiting for a ${w.label} admin to approve (${r.access}); choose it again afterwards`:`✔ Using ${w.label}. Press r on the dashboard to restart services.`);
-    pick('Which Workspace sends tasks to your Coworker?',s.workspaces.map(w=>({id:w.id,label:w.name,hint:w.hint})),w=>w.id==='personal'?use(w):confirm(`Connect your Coworker to ${w.label}? Its members can then send it tasks.`,{y:['connect',()=>use(w)]}),Math.max(0,s.workspaces.findIndex(w=>w.id===s.workspace)));
+    const use=w=>attempt(()=>core.useWorkspace(w.id),r=>r.pending?`Waiting for a ${w.label} admin to approve (${r.access}); choose it again afterwards`:`✔ Using ${w.label}${r.waiting?.length?` (waiting for approval: ${r.waiting.join(', ')})`:''}. Press r on the dashboard to restart services.`);
+    pick('Which Workspace sends tasks to your Coworker?',s.workspaces.map(w=>({id:w.id,label:w.name,hint:w.hint})),w=>w.id==='personal'?use(w):confirm(`Connect your Coworkers to ${w.label}? Its members can then send them tasks. Coworkers approved there before need no new approval.`,{y:['connect',()=>use(w)]}),Math.max(0,s.workspaces.findIndex(w=>w.id===s.workspace)));
    }
   }
   if(id==='pay'){
