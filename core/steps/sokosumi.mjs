@@ -3,6 +3,7 @@ import {loadConfig,saveConfig,readEnv,writeEnv} from '../config.mjs';
 import {log} from '../events.mjs';
 import {isHeadless,takeOpenedUrl,keychainLocked} from '../vault.mjs';
 import {hostname,userInfo} from 'node:os';
+import {loadTemplate} from '../../templates/index.mjs';
 // Step 3: account → Vendor → Coworker → runtime key → Workspace. Reuses whatever already exists.
 export const id='sokosumi',title='Connect Sokosumi';
 // Over SSH there is no browser: sign in with an API key (pasted), or open the sign-in link on your laptop
@@ -13,6 +14,9 @@ export function tunnelCommand(){
  const host=(process.env.SSH_CONNECTION??'').split(' ')[2]||hostname();
  return `ssh -N -L 53682:127.0.0.1:53682 ${userInfo().username}@${host}`;
 }
+// The name buyers see. Chosen with e in step 3 (or lokal coworker rename); the default names the job and you.
+const defaultName=user=>{const t=(()=>{try{return loadTemplate(readEnv().LOKAL_TEMPLATE||'freeform').name}catch{return 'Assistant'}})();return `${t} by ${user?.email?.split('@')[0]??'lokAl'}`;};
+export const plannedName=(user)=>{const cfg=loadConfig();return cfg.coworkerName??defaultName(user);};
 export async function status(){
  const cli=await sk.installed();
  const env=readEnv(),cfg=loadConfig();
@@ -30,17 +34,17 @@ export async function status(){
  const v=await sk.vendor();
  items.push({label:'Vendor',status:v?'ok':'todo',detail:v?`${v.name} (${v.slug})`:'lokAl creates one for you'});
  const coworkerId=env.COWORKER_ID;
- items.push({label:'Coworker',status:coworkerId?'ok':'todo',detail:coworkerId?`${cfg.coworkerName??''} ${coworkerId}`.trim():'lokAl registers a private Coworker'});
+ items.push({label:'Coworker',status:coworkerId?'ok':'todo',detail:coworkerId?`${cfg.coworkerName??''} ${coworkerId} · press e to rename`.trim():`lokAl registers "${plannedName(user)}" · press e to choose the name`});
  const keyOk=!!coworkerId&&(cfg.keyImported===coworkerId||cfg.keyImported===undefined&&!!coworkerId);
  items.push({label:'Runtime key',status:keyOk?'ok':'todo',detail:keyOk?'stored in the CLI vault':'imported straight into the CLI vault'});
  const ws=env.SOKOSUMI_ORGANIZATION_SLUG;
  const orgs=(await sk.workspaces().catch(()=>[])).filter(w=>w.organizationId);
  const cur=ws&&orgs.find(o=>o.slug===ws);
  const workspaces=[{id:'personal',name:'Personal Workspace',hint:'private: only you can send it tasks'},...orgs.map(o=>({id:o.slug,name:o.name??o.slug,hint:`organization · ${o.slug}`}))];
- items.push({label:'Workspace',status:'ok',detail:ws?`${cur?.name??ws} (organization)${orgs.length?' · press w to change':''}`:`Personal Workspace (private testing)${orgs.length===1?` · press w to use ${orgs[0].name??orgs[0].slug}`:orgs.length?` · press w to pick one of your ${orgs.length} organization Workspaces`:''}`});
+ items.push({label:'Workspace',status:'ok',detail:ws?`${cur?.name??ws} (organization)${orgs.length?' · press o to change':''}`:`Personal Workspace (private testing)${orgs.length===1?` · press o to use ${orgs[0].name??orgs[0].slug}`:orgs.length?` · press o to pick one of your ${orgs.length} organization Workspaces`:''}`});
  const done=v&&coworkerId&&keyOk;
  if(v&&loadConfig().vendorId!==v.id)saveConfig({vendorId:v.id});
- return {id,title,status:done?'ok':'todo',items,user,vendor:v,coworkerId,workspace:ws||'personal',workspaces,organizations:orgs,headless};
+ return {id,title,status:done?'ok':'todo',items,user,vendor:v,coworkerId,coworkerName:cfg.coworkerName??null,workspace:ws||'personal',workspaces,organizations:orgs,headless};
 }
 export function login(){sk.login();}
 export async function loginWithKey(key){await sk.loginWithKey(key);return status();}
@@ -52,13 +56,22 @@ export async function run(){
  if(!v){const base=s.user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,24);v=await sk.createVendor(`${base} (lokal)`,`lokal-${base}-${Date.now().toString(36).slice(-4)}`);log('sokosumi',`Vendor created: ${v.slug}`);}
  let coworkerId=readEnv().COWORKER_ID;
  if(!coworkerId){
-  const cfg=loadConfig();const name=`${cfg.model??'local model'} via lokAl`;
-  // Reinstalls (e.g. after uninstall.sh) reuse the Coworker lokal registered before instead of piling up new ones.
-  const prior=(await sk.ownedCoworkers()).find(c=>/ via lokal$/i.test(c.name??''));
+  const name=plannedName(s.user);
+  // Reinstalls (e.g. after uninstall.sh) reuse the Coworker lokal registered before instead of piling up new ones
+  // (" via lokAl": the fixed name older versions used).
+  const prior=(await sk.ownedCoworkers()).find(c=>c.name===name||/ via lokal$/i.test(c.name??''));
   const c=prior??await sk.registerCoworker({vendorId:v.id,name,description:'A local open-weights model served with lokAl. Results are checked before payment.'});
   coworkerId=c.id;writeEnv({COWORKER_ID:coworkerId});saveConfig({coworkerName:c.name??name,vendorId:v.id});log('sokosumi',`${prior?'Reusing':'Registered'} Coworker ${c.name??name} (${coworkerId})`);
   await sk.importRuntimeKey(coworkerId);saveConfig({keyImported:coworkerId});log('sokosumi','Runtime key imported into the CLI vault');
  }
+ return status();
+}
+// Before registration: the name to register with. After: renames the Coworker on Sokosumi (external write).
+export async function setName(name){
+ const n=String(name??'').trim();if(!n||n.length>80)throw new Error('A name has 1 to 80 characters');
+ const id=readEnv().COWORKER_ID;
+ if(id){await sk.renameCoworker(id,n);log('sokosumi',`Coworker renamed to ${n}`);}
+ saveConfig({coworkerName:n});
  return status();
 }
 // Which Workspace's tasks the Coworker serves: 'personal', or an organization's slug/id from status().workspaces.

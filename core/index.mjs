@@ -62,6 +62,7 @@ export function createCore(){
   async setPrice(v,cid='main'){const c=cw.get(cid);if(!c)throw new Error(`No Coworker ${cid}`);const p=job.setPrice(v,c.dir);await applyJob(cid,['worker','api']);return p},
   templates:()=>listTemplates().map(({prompt,samples,...t})=>t),
   // step 3: Sokosumi (browser, or API key / sign-in link when headless)
+  async setCoworkerName(name,cid='main'){if(cid==='main')return sokosumi.setName(name);return cw.rename(cid,name)},
   login:sokosumi.login,loginWithKey:sokosumi.loginWithKey,useWorkspace:sokosumi.useWorkspace,
   // step 4: payments
   setValue:pay.setValue,setNetwork:pay.setNetwork,network:()=>networkOf(readEnv()).id,

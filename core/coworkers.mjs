@@ -73,7 +73,7 @@ export async function add({name,template,register=true}){
  if(register){
   try{
    const c=await sk.registerCoworker({vendorId,name:`${name} · lokAl`,description:t.description||'A model served with lokAl. Results are checked before payment.'});
-   writeEnv({COWORKER_ID:c.id},join(dir,'.env'));log('coworkers',`Registered Coworker ${name} (${c.id}) on Sokosumi`);
+   writeEnv({COWORKER_ID:c.id},join(dir,'.env'));log('coworkers',`Registered Coworker ${c.name} (${c.id}) on Sokosumi`);
    await sk.importRuntimeKey(c.id);log('coworkers','Runtime key imported');
    if(main.SOKOSUMI_ORGANIZATION_ID){
     const r=await sk.connectWorkspace({coworkerId:c.id,vendorId,organizationId:main.SOKOSUMI_ORGANIZATION_ID}).catch(e=>({error:e.message}));
@@ -91,6 +91,14 @@ export async function registerOnSokosumi(id){
  const vendorId=loadConfig().vendorId??(await sk.vendor())?.id;if(!vendorId)throw new Error('Connect Sokosumi first');
  const r=await sk.registerCoworker({vendorId,name:`${c.name} · lokAl`,description:t.description||'A model served with lokAl.'});
  writeEnv({COWORKER_ID:r.id},join(c.dir,'.env'));await sk.importRuntimeKey(r.id);
+ return get(id);
+}
+// New display name, locally and on Sokosumi (an external write: callers confirm it first).
+export async function rename(id,name){
+ const c=get(id);if(!c||c.primary)throw new Error(`No extra Coworker ${id}`);
+ const n=String(name??'').trim();if(!n||n.length>80)throw new Error('A name has 1 to 80 characters');
+ if(c.coworkerId)await sk.renameCoworker(c.coworkerId,`${n} · lokAl`);
+ writeEnv({LOKAL_COWORKER_NAME:n,LOKAL_AGENT_NAME:`${n} (lokAl)`},join(c.dir,'.env'));
  return get(id);
 }
 export function setTemplate(id,templateId){

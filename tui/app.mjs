@@ -110,7 +110,7 @@ function SokosumiPanel({s}){
    <${Text} color=${C.accent2} wrap="wrap">${link(s.signIn.url)}</${Text}>
    <${Text} color=${C.dim} wrap="wrap">Also in ~/.local/share/lokal/logs/lokal.log, or run \`lokal sokosumi --preprod auth login\` for it on one line. lokAl notices the sign-in on its own.</${Text}>
   </${Card}>`:null}
-  <${Hints} keys=${[['enter',s.status==='ok'?'re-check':signedOut&&s.headless?'paste API key':'connect'],...(signedOut&&s.headless?[['b','sign-in link']]:[]),...(s.workspaces?.length>1?[['w','choose Workspace']]:[])]}/>
+  <${Hints} keys=${[['enter',s.status==='ok'?'re-check':signedOut&&s.headless?'paste API key':'connect'],...(signedOut&&s.headless?[['b','sign-in link']]:[]),...(s.user?[['e',s.coworkerId?'rename Coworker':'choose its name']]:[]),...(s.workspaces?.length>1?[['o','choose Workspace']]:[])]}/>
  </${Box}>`;
 }
 function PayPanel({s,ui,qr}){
@@ -400,7 +400,12 @@ export function App({core}){
    const signedOut=s.items?.find(i=>i.label==='Account'&&i.status!=='ok');
    if(key.return){if(signedOut&&s.headless)form('Sokosumi sign-in',[{key:'k',label:'Sokosumi API key',secret:true}],v=>attempt(()=>core.loginWithKey(v.k),'✔ Signed in. Press enter to create your Vendor and Coworker.'),'Create the key on your laptop: https://preprod.sokosumi.com/connections → API keys. It starts with soko_preprod_.');else runStep(id);}
    if(input==='b'&&signedOut){core.login();flash('Getting a sign-in link…');setTimeout(()=>refresh(sel),1500);}
-   if(input==='w'&&s.workspaces?.length>1){
+   if(input==='e'&&s.user){
+    const cur=s.items.find(i=>i.label==='Coworker')?.detail.match(/"(.+)"/)?.[1]??s.coworkerName??'';
+    const save=n=>attempt(()=>core.setCoworkerName(n),`✔ ${s.coworkerId?'Renamed to':'It will be registered as'} ${n}`);
+    form('Coworker name',[{key:'n',label:'The name buyers see on Sokosumi (unique there)',initial:cur}],v=>s.coworkerId?confirm(`Rename your Coworker on Sokosumi to "${v.n}"?`,{y:['rename',()=>save(v.n)]}):save(v.n));
+   }
+   if(input==='o'&&s.workspaces?.length>1){
     const use=w=>attempt(()=>core.useWorkspace(w.id),r=>r.pending?`Waiting for a ${w.label} admin to approve (${r.access}); choose it again afterwards`:`✔ Using ${w.label}. Press r on the dashboard to restart services.`);
     pick('Which Workspace sends tasks to your Coworker?',s.workspaces.map(w=>({id:w.id,label:w.name,hint:w.hint})),w=>w.id==='personal'?use(w):confirm(`Connect your Coworker to ${w.label}? Its members can then send it tasks.`,{y:['connect',()=>use(w)]}),Math.max(0,s.workspaces.findIndex(w=>w.id===s.workspace)));
    }

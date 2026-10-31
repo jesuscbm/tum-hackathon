@@ -25,7 +25,7 @@ const HELP=`lokAl: your local LLM, hired and paid on Cardano
   lokal sokosumi …   the Sokosumi CLI, with lokAl's keyring stand-in (for SSH servers)
   lokal prompt add FILE.md | list
                      add a job written in Markdown (front matter: name, check, price; body: the prompt)
-  lokal coworker list | add NAME [--template ID | --prompt FILE.md] [--yes] | remove ID [--retire] | paid ID
+  lokal coworker list | add NAME [--template ID | --prompt FILE.md] [--yes] | rename [ID] NAME | remove ID [--retire] | paid ID
                      serve several jobs side by side, each as its own Sokosumi Coworker
   lokal network [preprod | mainnet]
                      show or switch the Cardano network (mainnet moves real money)
@@ -201,6 +201,13 @@ else if(cmd==='coworker'||cmd==='coworkers'){
   }
   else if(sub==='paid'){const id=pos[1];if(!id)die('usage: lokal coworker paid ID',2);await c.registerCoworkerPaid(id);console.log(`✔ Registration for ${id} submitted; lokal info shows its state`);}
   else if(sub==='register'){const x=await c.registerCoworkerOnSokosumi(pos[1]);console.log(`✔ ${x.name}: Sokosumi ${x.coworkerId}`);}
+  else if(sub==='rename'){
+   const [id,name]=pos.length>2?[pos[1],pos.slice(2).join(' ')]:['main',pos[1]];
+   if(!name)die('usage: lokal coworker rename [ID] NAME   (ID defaults to main)',2);
+   const live=id==='main'?!!(await c.status('sokosumi')).coworkerId:!!c.coworkers().find(x=>x.id===id)?.coworkerId;
+   if(live&&!flag('--yes')&&!mock){if(!process.stdin.isTTY)die('Renaming writes to Sokosumi: pass --yes to confirm',2);if(!/^y/i.test(await ask(`Rename ${id} to "${name}" on Sokosumi? [y/N] `)))process.exit(1);}
+   await c.setCoworkerName(name,id);console.log(`✔ ${id}: ${live?'renamed to':'will be registered as'} "${name}"`);
+  }
   else if(sub==='job'){const x=await c.setCoworkerTemplate(pos[1],pos[2]);console.log(`✔ ${x.name} now does ${x.template}. Restart services to apply.`);}
   else for(const x of c.coworkers())console.log(`${x.id.padEnd(16)} ${String(x.name).padEnd(22)} job: ${String(x.template??'—').padEnd(16)} ${x.coworkerId?`sokosumi ${x.coworkerId}`:'not on Sokosumi'}${x.paid?` · paid, ${x.price}`:''}  ports ${x.ports.eve}/${x.ports.api}`);
  }catch(e){die(e.message)}

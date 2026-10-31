@@ -1,4 +1,5 @@
 import {spawn} from 'node:child_process';
+import {randomBytes} from 'node:crypto';
 import {json,run,which} from './exec.mjs';
 import {log} from './events.mjs';
 // Thin wrapper over the pinned Sokosumi CLI (Preprod). Secrets never touch our logs.
@@ -32,9 +33,22 @@ export const API_KEY_PAGE='https://preprod.sokosumi.com/connections';
 export async function vendor(){const r=await cli(['vendors','me']);const v=r.data?.vendors??r.data?.vendor??r.data;return Array.isArray(v)?v[0]??null:v??null;}
 export async function createVendor(name,slug){const r=await cli(['vendors','create','--name',name,'--slug',slug]);if(!r.ok)throw new Error(firstLine(r));return r.data.vendor??r.data;}
 export async function ownedCoworkers(){const r=await cli(['coworkers','list','--scope','owned']);return r.data?.coworkers??[];}
+// Sokosumi derives a Coworker's slug from its name, and slugs are unique across all users. On a clash (409) the
+// Coworker is not created; retry with a short suffix ("Invoice reader 7f3a") instead of failing.
+export const slugTaken=r=>/409|slug already exists/i.test(`${r.stderr}${r.stdout}`);
 export async function registerCoworker({vendorId,name,description}){
- const r=await cli(['coworkers','register','--personal','--vendor-id',vendorId,'--name',name,'--description',description,'--capability','tasks']);
- if(!r.ok)throw new Error(firstLine(r));return r.data.coworker??r.data;
+ for(let i=0;;i++){
+  const n=i?`${name} ${randomBytes(2).toString('hex')}`:name;
+  const r=await cli(['coworkers','register','--personal','--vendor-id',vendorId,'--name',n,'--description',description,'--capability','tasks']);
+  if(r.ok){const c=r.data.coworker??r.data;if(i)log('sokosumi',`"${name}" is taken on Sokosumi; registered as "${n}"`);return {...c,name:c.name??n};}
+  if(i<3&&slugTaken(r))continue;
+  throw new Error(firstLine(r));
+ }
+}
+export async function renameCoworker(id,name){
+ const r=await cli(['coworkers','update',id,'--name',name]);
+ if(!r.ok)throw new Error(slugTaken(r)?`The name "${name}" is taken on Sokosumi (names must be unique there). Pick another one.`:firstLine(r));
+ return true;
 }
 // Sokosumi has no delete for Coworkers: a removed one is renamed so nobody (and no reinstall) picks it up again.
 export async function retireCoworker(id,name){const r=await cli(['coworkers','update',id,'--name',`${name} (retired)`.slice(0,120),'--description','Retired: no longer served by lokAl.']);if(!r.ok)throw new Error(firstLine(r));return true;}

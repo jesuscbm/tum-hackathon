@@ -27,9 +27,9 @@ export function createMockCore(){
    it('Price','ok',st.price?`${st.price} per job (your price)`:"1 USDM per job (the job's default) · press p to change"),it('Tried it',!!st.tried,st.tried??'try a sample before going live')]}),
   sokosumi:()=>({id:'sokosumi',title:'Connect Sokosumi',status:st.sokosumi?'ok':'todo',headless,signIn:st.signIn&&!st.sokosumi?{url:'https://api.preprod.sokosumi.com/auth/oauth2/authorize?client_id=demo&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Foauth%2Fcallback',tunnel:'ssh -N -L 53682:127.0.0.1:53682 you@server'}:null,items:[
    it('Sokosumi CLI','ok','v1.1.0'),st.sokosumi?it('Account','ok','you@example.com'):headless?it('Account','input','no browser on this machine: paste a Sokosumi API key, or press b for a sign-in link',{input:{key:'SOKOSUMI_API_KEY',label:'Sokosumi API key (starts with soko_preprod_)',secret:true}}):it('Account','action','sign in once in your browser',{command:'sokosumi --preprod auth login'}),
-   it('Vendor',st.sokosumi,st.sokosumi?'you (lokal-you)':'lokAl creates one for you'),it('Coworker',st.sokosumi,st.sokosumi?'llama3.2:3b via lokal':'lokAl registers a private Coworker'),
-   it('Runtime key',st.sokosumi,st.sokosumi?'stored in the CLI vault':'imported straight into the CLI vault'),it('Workspace','ok',st.workspace?'Example Org (organization) · press w to change':'Personal Workspace (private testing) · press w to use Example Org')],
-   workspace:st.workspace??'personal',workspaces:[{id:'personal',name:'Personal Workspace',hint:'private: only you can send it tasks'},{id:'example-org',name:'Example Org',hint:'organization · example-org'}]}),
+   it('Vendor',st.sokosumi,st.sokosumi?'you (lokal-you)':'lokAl creates one for you'),it('Coworker',st.sokosumi,st.sokosumi?`${st.coworkerName??'Invoice → JSON by you'} cw_main_demo · press e to rename`:`lokAl registers "${st.coworkerName??'Invoice → JSON by you'}" · press e to choose the name`),
+   it('Runtime key',st.sokosumi,st.sokosumi?'stored in the CLI vault':'imported straight into the CLI vault'),it('Workspace','ok',st.workspace?'Example Org (organization) · press o to change':'Personal Workspace (private testing) · press o to use Example Org')],
+   user:st.sokosumi?{email:'you@example.com'}:null,coworkerId:st.sokosumi?'cw_main_demo':null,coworkerName:st.coworkerName??null,workspace:st.workspace??'personal',workspaces:[{id:'personal',name:'Personal Workspace',hint:'private: only you can send it tasks'},{id:'example-org',name:'Example Org',hint:'organization · example-org'}]}),
   pay:()=>({id:'pay',title:'Get paid',status:st.pay>=4?'ok':'todo',network:st.net,wallet:{address:st.pay>=1?W:null,balance:st.pay>=2?{ada:10000,usdm:0}:{ada:0,usdm:0},faucet:'https://dispenser.masumi.network/'},items:[
    it('Network',st.net==='preprod'?'ok':'warn',st.net==='preprod'?'Cardano preprod: test ADA and test USDM (press n for mainnet)':'Cardano MAINNET: real ADA and real USDM (press n for preprod)'),
    it('Blockfrost key',st.bf?'ok':'input',st.bf?'set':'free preprod key from blockfrost.io',{input:st.bf?undefined:{key:'BLOCKFROST_API_KEY_PREPROD',label:'Blockfrost preprod project id',secret:true}}),
@@ -76,6 +76,7 @@ export function createMockCore(){
   async registerCoworkerOnSokosumi(id){return st.coworkers.find(c=>c.id===id)},async registerCoworkerPaid(id){const c=st.coworkers.find(c=>c.id===id);if(c)c.paid=true;return c},
   async selectTemplate(id){st.job=id;return statusOf.job()},createTemplate:async({id})=>{st.job=id},
   login(){if(headless)st.signIn=true;log('sokosumi',headless?'Started the Sokosumi sign-in':'Opened Sokosumi login in your browser')},
+  async setCoworkerName(name,cid='main'){if(cid==='main'){st.coworkerName=name;return statusOf.sokosumi()}const c=st.coworkers.find(c=>c.id===cid);if(c)c.name=name;return c},
   async setPrice(v){st.price=v?parsePrice(v).display:null;return st.price?{...parsePrice(st.price),own:true}:parsePrice(1)},
   async useWorkspace(id){st.workspace=id==='personal'?null:id;return {pending:false,org:id==='personal'?null:{name:'Example Org',slug:id}}},
   async setValue(key){if(key==='BLOCKFROST_API_KEY_PREPROD')st.bf=true;return statusOf.pay()},

@@ -85,7 +85,10 @@ Masumi Payment Service commit `a846392…` (`pay/mps.mjs`), Ollama `v0.40.13` (`
 - Payment service log: only `[error]`/`[warn]` records reach the UI; continuation lines, stack frames and known
   noise (Mesh "fetchCostModels is not a function": harmless, the service syncs cost models from chain itself)
   stay in the log file.
-- Workspace is chosen, not hardcoded: step 3 `w` picker, `lokal workspace [list|personal|SLUG]` (`useWorkspace`).
+- Coworker names: chosen with `e` in step 3 or `lokal coworker rename [ID] NAME` (renames on Sokosumi once registered).
+  Sokosumi derives a globally unique slug from the name; `sk.registerCoworker` retries a taken one (409) with a
+  4-hex suffix. The default is "<job> by <email name>" (it used to be the fixed "<model> via lokAl", which clashed).
+- Workspace is chosen, not hardcoded: step 3 `o` picker, `lokal workspace [list|personal|SLUG]` (`useWorkspace`).
 - `lokal buy`: self-purchase through the agent API with the payment service's purchasing wallet (`pay/buy.mjs`).
   Mainnet guide: `docs/mainnet.md`.
 - Prices: `AGENT_PRICE` in a Coworker's `.env` (`lokal price`, `p` in step 2) overrides its job's price
