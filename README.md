@@ -1,101 +1,121 @@
 # lokAl
 
-Run a local language model (or any OpenAI-compatible API) as a paid agent on Sokosumi using Masumi escrow on Cardano preprod (mainnet opt-in). Works the same on a laptop and on a server over SSH.
+lokAl turns a language model running on your own machine into a paid agent on [Sokosumi](https://preprod.sokosumi.com). Buyers pay into Masumi escrow on Cardano (preprod by default), your model does the job, and you get paid when the result passes a check. Setup and monitoring happen in a single terminal UI, so it works the same on a laptop as on a server over SSH.
 
-**Who it is for.** Anyone with spare compute (a gaming PC, a lab GPU server) who wants to sell agent work without a cloud API, and buyers whose data should not go to a large AI provider: an invoice processed by lokAl stays on the seller's machine and never reaches OpenAI or another provider. Buyers pay into escrow, and the seller only claims the payment when a deterministic check on the result passes.
+The point: if you have spare compute (a gaming PC, a lab GPU server) you can sell agent work without a cloud API. And since the model runs locally, a buyer's data stays on the seller's machine. An invoice sent to lokAl never goes to OpenAI or any other provider.
 
-## Setup
+## What it does
 
-Requirements: Linux or macOS (x64 or arm64), `curl`, `tar`, Docker or PostgreSQL for the payment database (the installer offers to install Docker on Linux, or `brew install postgresql@16` on macOS; it asks first, since that step needs sudo), a Sokosumi preprod account, and a Blockfrost preprod key. Lokal installs Node.js and can install Ollama if needed. Allow 2–5 GB per model. No browser or desktop keyring is needed on servers.
+1. **Runs your model.** Ollama with a model picked for your hardware, any Ollama tag, a llama.cpp server, or an OpenAI-compatible API (OpenAI, OpenRouter, Groq, Mistral, vLLM, LM Studio).
+2. **Takes jobs from Sokosumi.** Your model is registered as a Sokosumi Coworker and answers the Tasks sent to it. Buyers can also call it through the MIP-003 agent API.
+3. **Checks results before getting paid.** Each job comes with a deterministic check (JSON schema, regex, length, invoice totals). If a result fails, lokAl retries once. If it fails again it is never submitted, so the buyer is not charged and can reclaim the escrow after the deadline.
+4. **Commits to what produced the result.** The hash stored on-chain covers the output, the check verdict, the prompt hash, the model name and the model weights digest. Anyone can recompute it with `lokal verify`.
 
-One command does the whole ride: install, then the setup wizard starts in the same terminal.
+The included `invoice-json` job turns an invoice into JSON and checks the schema and totals. You can also write your own jobs as Markdown files.
+
+## Install
+
+You need Linux or macOS (x64 or arm64), `curl`, `tar`, a [Sokosumi preprod account](https://preprod.sokosumi.com) and a [Blockfrost](https://blockfrost.io) preprod key. Plan for 2–5 GB of disk per model.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/jesuscbm/lokAl/main/install.sh | sh
 ```
 
-Follow the terminal prompts to choose a model and job, sign in to Sokosumi, enter the Blockfrost key, and start the services.
+The installer sets up a private Node.js, and offers to install Ollama if you don't have it. The payment service needs a database: if neither Docker nor PostgreSQL is installed, it asks before installing Docker (Linux) or `postgresql@16` through Homebrew (macOS). That's the only step that uses sudo.
 
-- **Model (step 1):** Ollama with a model that fits your hardware (up to 70B on large GPUs), or press `b` for any Ollama tag, an OpenAI-compatible API (OpenAI, OpenRouter, Groq, Mistral, vLLM, LM Studio) or a llama.cpp server.
-- **Over SSH (step 3):** paste a Sokosumi API key from <https://preprod.sokosumi.com/connections>, or press `b` for a sign-in link to open on your laptop through an SSH tunnel. Without a keyring, credentials are kept in `~/.local/share/lokal/vault/` (mode 600).
-- **Background services:** the agent, worker, agent API and payment service run in `lokald`. Quit the UI or disconnect at any time; `lokal` reopens the dashboard, `lokal down` stops everything, `lokal daemon enable` starts it at login and after reboots (systemd on Linux, launchd on macOS).
+When it finishes, the setup wizard opens in the same terminal.
 
-To uninstall, run:
+## Setup wizard
 
-```sh
-lokal uninstall
-```
+| Step | What you do |
+|---|---|
+| 1. Machine & model | Accept the suggested model, or press `b` to pick another backend |
+| 2. Job | Choose `invoice-json` or import your own prompt (`f`); set the price with `p` |
+| 3. Sokosumi | Sign in and create or reuse a Coworker; `o` picks an organization Workspace |
+| 4. Payments | Paste the Blockfrost key; lokAl sets up the payment service and wallets, gets test ADA and registers the agent |
+| 5. Live | Send yourself a test task (`t`) and watch the dashboard |
+
+**Over SSH:** in step 3, paste an API key from <https://preprod.sokosumi.com/connections>, or press `b` to get a sign-in link you can open on your laptop through an SSH tunnel. Servers don't need a browser or a desktop keyring. Without a keyring, credentials go to `~/.local/share/lokal/vault/` (mode 600).
+
+**Background services:** the agent, worker, agent API and payment service run under `lokald`, a small supervisor. Closing the UI or dropping the SSH connection doesn't stop them. Run `lokal` to reopen the dashboard and `lokal down` to stop everything. `lokal daemon enable` starts it at login (systemd on Linux, launchd on macOS).
+
+The dashboard shows earnings, recent jobs, CPU/RAM/GPU load and a health map of every service. Press `i` (or run `lokal info`) for your wallet address, agent ID, Coworker IDs and explorer links.
 
 ## Usage
 
-The built-in `invoice-json` job converts an invoice to JSON and checks its schema and totals. In the terminal UI, choose the job and submit a sample or live task.
+### Your own jobs
 
-Jobs can also be Markdown files: front matter for `name`, `check` (`none|json|schema|regex|length|invoice`, with `schema`/`pattern`/`min`/`max`) and `price`, the body is the prompt. Import with `f` in step 2 (on "+ Your prompt") or `lokal prompt add FILE.md`; see [docs/examples](docs/examples).
-
-Several jobs can run side by side, each as its own Sokosumi Coworker sharing the model and wallet (`c` in the UI, or `lokal coworker add NAME --prompt FILE.md`, `lokal coworker remove ID [--retire]`).
-
-The dashboard shows earnings, machine load (CPU, RAM, GPU) and a health map of the parts with a light each and a pulse on links carrying traffic. `i` (or `lokal info`) shows your wallet address, agent identifier, Coworker IDs and explorer links.
-
-Useful commands:
+A job is a Markdown file. The front matter sets `name`, `price` and `check` (`none`, `json`, `schema`, `regex`, `length` or `invoice`, plus `schema`, `pattern`, `min` or `max` where needed). The body is the prompt.
 
 ```sh
-lokal                  # setup wizard or dashboard
+lokal prompt add my-job.md       # or f in step 2
+```
+
+Examples are in [docs/examples](docs/examples).
+
+### Several jobs at once
+
+Each job can run as its own Coworker. All of them share the model and the wallet.
+
+```sh
+lokal coworker add NAME --prompt my-job.md   # or c in the UI
+lokal coworker remove ID [--retire]
+```
+
+### Commands
+
+```sh
+lokal                  # setup wizard, or the dashboard once set up
 lokal status           # setup status
 lokal doctor           # diagnose services
-lokal verify           # verify a result hash
 lokal up               # start lokald and follow its logs (Ctrl+C detaches)
 lokal down             # stop lokald and its services
 lokal info             # wallet, agent and Coworker IDs, links
+lokal verify FILE HASH [--recheck]   # check a result against its on-chain hash
+lokal price 2 ADA      # price per job (USDM or ADA)
+lokal workspace        # which Sokosumi Workspace sends you tasks
 lokal model api URL MODEL   # use an OpenAI-compatible API (key on stdin)
 lokal login            # Sokosumi API-key sign-in (key on stdin)
-lokal network mainnet  # switch networks (asks for confirmation)
-lokal workspace        # which Sokosumi Workspace sends tasks (Personal or one of your organizations)
-lokal price 2 ADA      # what buyers pay per job (USDM or ADA; p in step 2)
-lokal buy "…"          # be your own buyer: a real paid job through the agent API (see docs/mainnet.md)
+lokal buy "…"          # buy a job from yourself through the agent API
 lokal wallet export    # selling wallet recovery phrase (asks first)
-lokal run machine      # configure model runtime
-lokal run job invoice-json
-lokal run sokosumi     # connect Sokosumi
-lokal run pay          # configure payments and registry
+lokal network mainnet  # switch networks (asks first)
+lokal run machine|job ID|sokosumi|pay   # run a single setup step
+lokal uninstall
 ```
 
-For headless setup, pass the Blockfrost key through stdin:
+For scripted setups, secrets go through stdin:
 
 ```sh
 echo "$BLOCKFROST_API_KEY_PREPROD" | lokal set BLOCKFROST_API_KEY_PREPROD
 ```
 
-## How payments work
+More detail in [docs/runbook.md](docs/runbook.md).
 
-Templates can define deterministic checks, such as a JSON schema or numeric constraints. The worker checks the result before submission. It retries a failed result once, then withholds it; the buyer may reclaim funds after the escrow deadline. A passing result is submitted to Masumi escrow.
+## Payments and verification
 
-The on-chain result hash covers canonical result data, including the output, the check's verdict, prompt hash, model name, and weights digest when available. The seller runs the check, but the buyer does not have to trust it: the check is deterministic and the job is public, so `lokal verify result.json HASH --recheck` re-runs it and catches a seller who committed "pass" for a failing result (evidence for a Masumi dispute). The model and weights digest are what the seller *claims*: a binding commitment, not a hardware attestation. Checks validate format and constraints, not factual correctness. See [result verification](docs/verify.md).
+The worker runs the job's check on every result before it submits anything. A passing result goes to Masumi escrow and the seller can withdraw after the unlock time. A failing result is retried once and then withheld.
 
-## Status
+The buyer doesn't have to trust the seller's check. The check is deterministic and the job definition is public, so `lokal verify result.json HASH --recheck` runs it again. A seller who committed "pass" for a failing result gets caught, and the output is evidence for a Masumi dispute.
 
-- [x] Llama 3.2 3B via Ollama passes the 3 passing invoice samples and fails the 2 failing ones (CPU, 15–35 s each).
-- [x] The Coworker Eve agent runs on the local model (Ollama OpenAI-compatible endpoint).
-- [x] Steps 1–2 run end to end against a scratch Coworker copy (model detection, smoke test, template selection, try-it).
-- [x] TUI wizard and dashboard in real and mock modes; `lokal status` and `lokal verify`.
-- [x] Installer tested from a local checkout into an empty home (private Node 24, SHA-256 verified).
-- [x] `npm run smoke`: clean-room install, CLI and tests without accounts or keys (also in CI).
-- [x] Payment service phase A: Postgres in Docker, pinned checkout, installation and migration.
-- [ ] Ollama auto-install on a machine without it (implemented, not tested).
-- [x] Payment service phase B on preprod: wallets, automatic test ADA, agent registration (tx `27d3b0f8…`, see [docs/evidence.md](docs/evidence.md)).
-- [x] Paid task on preprod through the gate with Llama 3.2 3B: FundsLocked `bc6d593b…`, ResultSubmitted `7332dccf…`; `lokal verify` matches the on-chain hash.
-- [ ] Seller receipt (withdrawal to the selling wallet) for that task: pending.
-- [ ] Check gate on a paid task with a failing result (no ResultSubmitted) and the buyer's refund.
-- [ ] Fresh-machine run and time to first paid job: not measured.
-- [x] lokald background service, file vault and API-key login for SSH, extra Coworkers, Markdown jobs, `lokal info`, health map (unit tests, mock and scratch folders).
-- [ ] API and llama.cpp backends, extra Coworker registration, `lokal buy`, ADA prices, and mainnet against real services (implemented, not tested).
+Two caveats. The model name and weights digest are what the seller *claims*: they are binding (they're in the hash), but not proof of which hardware ran what. And checks validate format and constraints, not whether the answer is factually right. See [docs/verify.md](docs/verify.md).
 
-## Limits
+**On preprod so far:** a Llama 3.2 3B agent, running on CPU, was registered ([27d3b0f8…](https://preprod.cardanoscan.io/transaction/27d3b0f8af44874537ef4a5fbccb15c9338996279f80a231351fec342303af11)) and completed a paid invoice task: funds locked in [bc6d593b…](https://preprod.cardanoscan.io/transaction/bc6d593bb5dd5f62c84b611d577c38ea31a70297dbf2ae0b7fdf2da177c8b6e1), result submitted in [7332dccf…](https://preprod.cardanoscan.io/transaction/7332dccf8073bf45c3d69430bbdae30837ed67f116fa3b16c45e8d21af3107bb), and `lokal verify` matches the on-chain hash. Details in [docs/evidence.md](docs/evidence.md).
 
-- Preprod by default. Mainnet is implemented but untested with real funds; Sokosumi Tasks stay on preprod (the CLI's Coworker runtime is preprod-only), so mainnet buyers use the MIP-003 agent API, which needs a public URL (`lokal set AGENT_PUBLIC_URL`). Step by step: [docs/mainnet.md](docs/mainnet.md).
-- The Masumi Payment Service needs Postgres: a Docker container, or a private cluster in `~/.local/share/lokal/pgdata` run with your own PostgreSQL binaries.
-- macOS: Apple GPU load is not shown (it needs `sudo powermetrics`); over SSH, run `security unlock-keychain` once per session so the Sokosumi CLI can use the Keychain. The macOS path is untested on real hardware.
-- Runtime auto-install supports Linux and macOS. On Windows, install Ollama separately.
-- Refunds depend on Masumi escrow deadlines.
+## Limitations
+
+- Preprod by default. Mainnet support is written but hasn't been run with real funds. Sokosumi Tasks are preprod-only, so on mainnet buyers use the agent API, which needs a public URL (`lokal set AGENT_PUBLIC_URL`). See [docs/mainnet.md](docs/mainnet.md).
+- The payment service needs PostgreSQL, either in a Docker container or as a private cluster in `~/.local/share/lokal/pgdata` using your own PostgreSQL binaries.
+- macOS hasn't been tried on real hardware. Apple GPU load isn't shown (it needs `sudo powermetrics`), and over SSH you need to run `security unlock-keychain` once per session for the Sokosumi CLI.
+- No Windows support. Refunds follow the Masumi escrow deadlines.
+
+## Future work
+
+- **Mainnet testing.** Run registration, paid jobs, withdrawals and `lokal buy` against mainnet with real funds, and the same for ADA prices.
+- **Full payment cycle on preprod.** Confirm the seller's withdrawal, and run a paid task that fails its check through to the buyer's refund.
+- **Modular Coworkers.** Today extra Coworkers share the main one's model and wallet. The goal is Coworkers as self-contained modules, each with its own model, backend, wallet and pricing, that can be packaged, shared and installed from others.
+- **Proxy layer in front of the agent.** The agent API has a basic cap on new jobs (60 per minute, 20 open payment requests). A proper proxy would add banning of abusive buyers, per-buyer rate limits, and rejecting new jobs when the machine is too busy (based on queue length and load) instead of accepting work it can't finish before the deadline.
+- **More backends tested for real.** The OpenAI-compatible API and llama.cpp backends, and the Ollama auto-install, are written but have only been tested with mocks.
+- **Time to first paid job.** Measure a from-scratch install on a fresh machine.
 
 ## Run from source
 
@@ -105,9 +125,10 @@ Requires Node.js 24.
 git clone https://github.com/jesuscbm/lokAl.git lokal
 cd lokal
 npm ci
-cd coworker && npm ci && cd ..
-node bin/lokal.mjs
-node bin/lokal.mjs --mock
+(cd coworker && npm ci)
+node bin/lokal.mjs          # real
+node bin/lokal.mjs --mock   # full UI with fake data, touches nothing
+npm test && (cd coworker && npm test)
 ```
 
-See [docs/runbook.md](docs/runbook.md) for command details. Built at the TUM Blockchain & AI Hackathon 2026, using [Sokosumi](https://preprod.sokosumi.com), Masumi, and Blockfrost.
+Built at the TUM Blockchain & AI Hackathon 2026 with [Sokosumi](https://preprod.sokosumi.com), [Masumi](https://masumi.network) and [Blockfrost](https://blockfrost.io).
