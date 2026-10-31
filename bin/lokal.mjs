@@ -5,7 +5,7 @@ const [cmd,...args]=process.argv.slice(2);
 const mock=process.env.LOKAL_MOCK==='1'||args.includes('--mock')||cmd==='--mock';
 const flag=f=>args.includes(f);
 const opt=f=>{const i=args.indexOf(f);return i>=0?args[i+1]:undefined};
-const pos=args.filter((a,i)=>!a.startsWith('--')&&!(i>0&&['--template','--prompt','--out','--model'].includes(args[i-1])));
+const pos=args.filter((a,i)=>!a.startsWith('--')&&!(i>0&&['--template','--prompt','--out','--model','--coworker'].includes(args[i-1])));
 const HELP=`lokAl: your local LLM, hired and paid on Cardano
 
   lokal              open the setup wizard / dashboard (terminal UI); services keep running when you quit
@@ -20,6 +20,8 @@ const HELP=`lokAl: your local LLM, hired and paid on Cardano
   lokal model [ollama TAG | api URL [MODEL] | llamacpp [URL]]
                      show or switch the model: any Ollama tag, or any OpenAI-compatible API (key on stdin)
   lokal login        sign in to Sokosumi with an API key (stdin), for machines without a browser
+  lokal workspace [list | personal | SLUG] [--yes]
+                     which Sokosumi Workspace sends tasks to the main Coworker (an organization needs a connect)
   lokal sokosumi …   the Sokosumi CLI, with lokAl's keyring stand-in (for SSH servers)
   lokal prompt add FILE.md | list
                      add a job written in Markdown (front matter: name, check, price; body: the prompt)
@@ -29,6 +31,10 @@ const HELP=`lokAl: your local LLM, hired and paid on Cardano
                      show or switch the Cardano network (mainnet moves real money)
   lokal wallet [export [--out FILE]]
                      selling wallet address and balance; export prints its recovery phrase (asks first)
+  lokal price [PRICE | default] [--coworker ID]
+                     show or set what buyers pay per job: "1 USDM", "0.5 USDM", "2 ADA" (Tasks and agent API)
+  lokal buy [TEXT | --file FILE] [--yes]
+                     be your own buyer: hire this agent through its agent API and pay from your purchasing wallet
   lokal set NAME     save BLOCKFROST_API_KEY_PREPROD, BLOCKFROST_API_KEY_MAINNET, AGENT_AUTHOR, AGENT_PUBLIC_URL
                      or AGENT_API_HOST (value on stdin)
   lokal doctor       one line per layer: model, agent, worker, Sokosumi, payments
@@ -156,6 +162,20 @@ else if(cmd==='login'){
  try{await c.loginWithKey(key);console.log('✔ Signed in to Sokosumi');}catch(e){die(e.message)}
  process.exit(0);
 }
+else if(cmd==='workspace'||cmd==='workspaces'){
+ const c=await core();const s=await c.status('sokosumi');const to=pos[0];
+ if(!to||to==='list'){
+  if(!s.workspaces)die('Sign in and create the Coworker first: lokal run sokosumi');
+  for(const w of s.workspaces)console.log(`${w.id===s.workspace?'●':' '} ${w.id.padEnd(24)} ${w.name} · ${w.hint}`);
+  process.exit(0);
+ }
+ if(to!=='personal'&&!flag('--yes')&&!mock){
+  if(!process.stdin.isTTY)die('Connecting the Coworker to a Workspace writes to Sokosumi: pass --yes to confirm',2);
+  if(!/^y/i.test(await ask(`Connect your Coworker to the Workspace ${to}? Its members can then send it tasks. [y/N] `)))process.exit(1);
+ }
+ try{const r=await c.useWorkspace(to);console.log(r.pending?`… Waiting for a ${r.org.name} admin to approve (${r.access}). Run this again afterwards.`:`✔ Workspace: ${r.org?.name??'Personal Workspace'}. Restart services to apply: lokal down && lokal up`);}catch(e){die(e.message)}
+ process.exit(0);
+}
 else if(cmd==='prompt'){
  const c=await core();
  if(args[0]==='add'){if(!args[1])die('usage: lokal prompt add FILE.md',2);try{const s=await c.importPrompt(resolve(args[1]));console.log(`✔ ${s.items[0].detail} is now the main Coworker's job`);}catch(e){die(e.message)}}
@@ -182,7 +202,7 @@ else if(cmd==='coworker'||cmd==='coworkers'){
   else if(sub==='paid'){const id=pos[1];if(!id)die('usage: lokal coworker paid ID',2);await c.registerCoworkerPaid(id);console.log(`✔ Registration for ${id} submitted; lokal info shows its state`);}
   else if(sub==='register'){const x=await c.registerCoworkerOnSokosumi(pos[1]);console.log(`✔ ${x.name}: Sokosumi ${x.coworkerId}`);}
   else if(sub==='job'){const x=await c.setCoworkerTemplate(pos[1],pos[2]);console.log(`✔ ${x.name} now does ${x.template}. Restart services to apply.`);}
-  else for(const x of c.coworkers())console.log(`${x.id.padEnd(16)} ${String(x.name).padEnd(22)} job: ${String(x.template??'—').padEnd(16)} ${x.coworkerId?`sokosumi ${x.coworkerId}`:'not on Sokosumi'}${x.paid?' · paid':''}  ports ${x.ports.eve}/${x.ports.api}`);
+  else for(const x of c.coworkers())console.log(`${x.id.padEnd(16)} ${String(x.name).padEnd(22)} job: ${String(x.template??'—').padEnd(16)} ${x.coworkerId?`sokosumi ${x.coworkerId}`:'not on Sokosumi'}${x.paid?` · paid, ${x.price}`:''}  ports ${x.ports.eve}/${x.ports.api}`);
  }catch(e){die(e.message)}
  process.exit(0);
 }
@@ -213,6 +233,41 @@ else if(cmd==='wallet'){
  const w=await c.wallet();
  console.log(w.address?`address  ${w.address}\nbalance  ${w.balance?`${w.balance.ada} ${w.coin??'ADA'} · ${w.balance.usdm} USDM`:w.error??'unknown'}\nexplorer ${w.explorer}${w.faucet?`\ntest ADA ${w.faucet}`:''}`:'No selling wallet yet: run setup step 4 (lokal run pay).');
  process.exit(0);
+}
+else if(cmd==='price'){
+ const c=await core();const cid=opt('--coworker')??'main';const v=pos.join(' ');
+ if(!v){for(const x of c.coworkers())console.log(`${x.id.padEnd(16)} ${String(x.name).padEnd(22)} ${x.price??'1 USDM'} per job`);process.exit(0);}
+ try{const p=await c.setPrice(v==='default'?'':v,cid);console.log(`✔ ${cid}: ${p.display} per job${p.own?'':" (the job's default)"}. Paid jobs use it from now on.`);}catch(e){die(e.message)}
+ process.exit(0);
+}
+else if(cmd==='buy'){
+ // A real purchase from your own agent (pay/buy.mjs); the way to test the paid path end to end, also on mainnet.
+ if(mock)die('lokal buy pays your real agent from your real payment service; it has no mock mode',2);
+ const b=await import('../pay/buy.mjs');const {networkOf}=await import('../core/network.mjs');const {readEnv}=await import('../core/config.mjs');
+ const text=opt('--file')?readFileSync(opt('--file'),'utf8'):pos.join(' ');
+ if(!text.trim())die('usage: lokal buy TEXT | --file FILE [--yes]',2);
+ const net=networkOf(readEnv());const p=b.price();
+ let w;try{w=await b.buyer()}catch(e){die(e.message)}
+ console.log(`network  ${net.name}\nprice    ${p.display}\nbuyer    ${w.address}\n         ${w.balance?`${w.balance.ada} ${w.coin} · ${w.balance.usdm} USDM`:'balance unknown'}`);
+ const miss=b.shortfall(w,p);
+ if(miss)die(`The purchasing wallet ${miss}. Send that to the address above${net.test?` (test ADA: ${w.faucet})`:''}, then run this again.`);
+ if(!flag('--yes')){
+  if(!process.stdin.isTTY)die(`Buying locks ${net.test?'test':'REAL'} funds in escrow: pass --yes to confirm`,2);
+  if(!/^y/i.test(await ask(`Lock ${p.display}${net.test?' (test funds)':' of REAL money'} in escrow for this job? [y/N] `)))process.exit(1);
+ }
+ let job;try{job=await b.start(text)}catch(e){die(e.message)}
+ console.log(`✔ Job ${job.jobId}: purchase requested, result due by ${new Date(Number(job.submitResultTime)).toLocaleTimeString()}.\n  Following it (Ctrl+C stops following; the purchase goes on):`);
+ let last='';const seen=new Set();
+ while(Date.now()<Number(job.submitResultTime)+10*60000){
+  const s=await b.poll(job);
+  for(const t of s.txs)if(!seen.has(t.hash)){seen.add(t.hash);console.log(`  tx ${t.url}`);}
+  const line=`  agent: ${s.job} · escrow: ${s.onChain??'not on chain yet'}${s.action?` · buyer: ${s.action}`:''}${s.error?` (${s.error})`:''}`;
+  if(line!==last){console.log(line);last=line;}
+  if(s.job==='completed'&&s.result!=null){console.log(`\n${s.result}\n\n${s.verified?'✔ the result matches the on-chain resultHash':s.verified===false?'✖ the result does NOT match the on-chain resultHash':'· no on-chain resultHash yet'}`);process.exit(s.verified?0:1);}
+  if(s.job==='failed'){console.log(`\n✖ The agent submitted no result (its check failed or the deadline passed), so the seller cannot withdraw.\n  The escrow stays refundable to the purchasing wallet after the result deadline (escrow: ${s.onChain}).`);process.exit(1);}
+  await new Promise(r=>setTimeout(r,10000));
+ }
+ die('Not finished yet. The purchase goes on: see the tx links above or lokal info.');
 }
 else if(cmd==='set'){
  const ALLOWED=['BLOCKFROST_API_KEY_PREPROD','BLOCKFROST_API_KEY_MAINNET','AGENT_AUTHOR','AGENT_PUBLIC_URL','AGENT_API_HOST'];

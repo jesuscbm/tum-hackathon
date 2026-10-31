@@ -25,9 +25,9 @@ export const STEPS=[machine,job,sokosumi,pay,live];
 const running=new Set(),errors={};
 // Values a user may pass as environment variables instead of typing them in the UI (CI, servers).
 // After a job change the running agent and worker still hold the old prompt and check: restart the ones lokald runs.
-async function applyJob(cid='main'){
+async function applyJob(cid='main',kinds=['agent','worker']){
  if(!(await daemon.status()).running)return;
- const ids=['agent','worker'].map(k=>cid==='main'?k:`${k}@${cid}`);
+ const ids=kinds.map(k=>cid==='main'?k:`${k}@${cid}`);
  const up=(await services.list()).filter(s=>ids.includes(s.id)&&s.status==='running'&&!s.external).map(s=>s.id);
  for(const id of up)await services.restart(id);
  if(up.length)log('job',`Restarted ${up.join(', ')} so ${cid==='main'?'they use':`${cid} uses`} the new job`);
@@ -59,9 +59,10 @@ export function createCore(){
   async selectTemplate(id){const s=await job.select(id);await applyJob();return s},
   async createTemplate(t){const s=await job.createCustom(t);await applyJob();return s},
   async importPrompt(f){const s=await job.importPrompt(f);await applyJob();return s},
+  async setPrice(v,cid='main'){const c=cw.get(cid);if(!c)throw new Error(`No Coworker ${cid}`);const p=job.setPrice(v,c.dir);await applyJob(cid,['worker','api']);return p},
   templates:()=>listTemplates().map(({prompt,samples,...t})=>t),
   // step 3: Sokosumi (browser, or API key / sign-in link when headless)
-  login:sokosumi.login,loginWithKey:sokosumi.loginWithKey,useOrganization:sokosumi.useOrganization,usePersonal:sokosumi.usePersonal,
+  login:sokosumi.login,loginWithKey:sokosumi.loginWithKey,useWorkspace:sokosumi.useWorkspace,
   // step 4: payments
   setValue:pay.setValue,setNetwork:pay.setNetwork,network:()=>networkOf(readEnv()).id,
   runPay:()=>runStep('pay',{startMps:()=>services.start('mps'),restartMps:()=>services.restart('mps')}),

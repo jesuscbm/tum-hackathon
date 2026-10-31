@@ -4,6 +4,8 @@ import {parseEnv} from 'node:util';
 import {verifySettlement} from './settlement.mjs';
 import {loadSokosumiRuntime} from './sokosumi-runtime.mjs';
 import {taskTarget,assertTaskTarget,verifyRuntimeTask} from './task-target.mjs';
+import {priceFor,fundsFor} from '../templates/index.mjs';
+import {NETWORKS} from '../core/network.mjs';
 const MINUTE=60*1000;
 export const USDM='16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
 export function taskHash(text){return createHash('sha256').update(text,'utf8').digest('hex')}
@@ -12,11 +14,15 @@ export function confirmedState(payment,expected){
 }
 // Running MPS dist/app-DCTS_JYs.js:249079 signs no forceLayer field.
 // Source differs from the loaded build. An absent field is valid for that build.
-export function purchasePayload(payment,nonce,registration){
+// lokal: the price a Task pays (preprod only: Sokosumi's Coworker runtime). expected = what this Task asked for.
+const ownFunds=()=>fundsFor(priceFor(),NETWORKS.preprod);
+const sameFunds=(a,b)=>a.length===b.length&&a.every((x,i)=>x.unit===b[i].unit&&String(x.amount)===String(b[i].amount));
+const show=f=>f.map(x=>`${Number(x.amount)/1e6} ${x.unit?'test USDM':'test ADA'}`).join(' + ');
+export function purchasePayload(payment,nonce,registration,expected=ownFunds()){
  if(payment.sellerReturnAddress!==null||(payment.forceLayer!==undefined&&payment.forceLayer!==null))throw new Error('Core Task events cannot preserve non-null signed sellerReturnAddress or forceLayer');
  if(payment.PaymentSource?.network!=='Preprod'||payment.PaymentSource?.paymentSourceType!=='Web3CardanoV2')throw new Error('Payment source is not Preprod Web3CardanoV2');
  if(payment.SmartContractWallet?.id!==registration.walletId)throw new Error('Payment wallet differs from dedicated seller wallet');
- if(payment.RequestedFunds.length!==1||payment.RequestedFunds[0].unit!==USDM||payment.RequestedFunds[0].amount!=='1000000')throw new Error('Signed quote differs from 1 test USDM');
+ if(!sameFunds(payment.RequestedFunds.map(({amount,unit})=>({amount,unit})),expected))throw new Error(`Signed quote differs from ${show(expected)}`);
  return {blockchainIdentifier:payment.blockchainIdentifier,agentIdentifier:payment.agentIdentifier,
  sellerVkey:payment.SmartContractWallet.walletVkey,submitResultTime:payment.submitResultTime,
  payByTime:payment.payByTime,unlockTime:payment.unlockTime,externalDisputeUnlockTime:payment.externalDisputeUnlockTime,
@@ -44,7 +50,8 @@ export async function createPaidAdapter({save,answer,core:providedCore,mps:provi
   const response=await fetch(`${process.env.MPS_URL}${path}`,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),
    headers:{'Content-Type':'application/json',token:env.MPS_RUNTIME_TOKEN},body:JSON.stringify(body)});
   const data=await response.json();
-  if(!response.ok||data.status!=='success')throw new Error(`MPS ${path} failed HTTP ${response.status}. Inspect saved state before retry.`);
+  // lokal: reads are retried on the next poll; only writes can leave an uncertain state.
+  if(!response.ok||data.status!=='success')throw new Error(`MPS ${path} failed HTTP ${response.status}${path.includes('resolve-')?' (a read: retried on the next poll)':'. Inspect saved state before retry.'}`);
   return data.data;
  }
  async function persist(task,state,paid){const next={...state,paid};await save(task.id,next);return next;}
@@ -56,7 +63,7 @@ export async function createPaidAdapter({save,answer,core:providedCore,mps:provi
    if(!state.input?.trim())throw new Error('Paid Task requires authoritative started input');
    const nonce=randomBytes(10).toString('hex');const now=Date.now();
    const body={network:'Preprod',agentIdentifier:r.agentIdentifier,paymentSourceType:'Web3CardanoV2',supportedPaymentSourceIndex:r.supportedPaymentSourceIndex,
-    inputHash:taskHash(state.input),identifierFromPurchaser:nonce,RequestedFunds:[{amount:'1000000',unit:USDM}],
+    inputHash:taskHash(state.input),identifierFromPurchaser:nonce,RequestedFunds:ownFunds(),
     payByTime:new Date(now+5*MINUTE).toISOString(),submitResultTime:new Date(now+20*MINUTE).toISOString(),unlockTime:new Date(now+36*MINUTE).toISOString(),externalDisputeUnlockTime:new Date(now+52*MINUTE).toISOString(),metadata:JSON.stringify({taskId:task.id})};
    if(!body.agentIdentifier||!Number.isInteger(body.supportedPaymentSourceIndex))throw new Error('Registration identifier and source index are required');
    state=await persist(task,state,{stage:'terms-pending',nonce,request:body});
@@ -64,10 +71,10 @@ export async function createPaidAdapter({save,answer,core:providedCore,mps:provi
    return persist(task,state,{...state.paid,stage:'terms-saved',payment});
   }
   if(p.stage==='terms-saved'){
-   const payload=purchasePayload(p.payment,p.nonce,r);
+   const payload=purchasePayload(p.payment,p.nonce,r,p.request?.RequestedFunds);
    if(Date.now()>=Number(p.payment.payByTime))throw new Error('Signed payment deadline expired');
    state=await persist(task,state,{...p,payload,stage:'purchase-pending'});
-   const response=await (await verifyRuntimeTask(await getCore(),task.id,target)).post(`/v1/tasks/${encodeURIComponent(task.id)}/events`,{comment:'Payment requested: 1 test USDM.',masumiPayment:payload});
+   const response=await (await verifyRuntimeTask(await getCore(),task.id,target)).post(`/v1/tasks/${encodeURIComponent(task.id)}/events`,{comment:`Payment requested: ${show(p.request?.RequestedFunds??ownFunds())}.`,masumiPayment:payload});
    return persist(task,state,{...p,stage:'awaiting-escrow',eventId:response.data.id});
   }
   if(['awaiting-escrow','awaiting-result','awaiting-withdrawal'].includes(p.stage)){
@@ -91,7 +98,7 @@ export async function createPaidAdapter({save,answer,core:providedCore,mps:provi
     return persist(task,state,{...p,stage:'result-saved',result:text,resultHash:taskHash(text)});
    }
    if(p.stage==='awaiting-result'&&observed.resultHash===p.resultHash&&confirmedState(observed,'ResultSubmitted')&&observed.onChainState==='ResultSubmitted')return persist(task,state,{...p,stage:'complete-ready'});
-   if(p.stage==='awaiting-withdrawal'&&['Withdrawn','DisputedWithdrawn'].includes(observed.onChainState)){const evidence=await verifySettlement({core:await verifyRuntimeTask(await getCore(),task.id,target),taskId:task.id,payment:observed,sellerAddress:registration().registration?.SmartContractWallet?.walletAddress,unit:USDM});return persist(task,state,{...p,stage:evidence.verified?'settled':'awaiting-withdrawal',settlement:evidence});}
+   if(p.stage==='awaiting-withdrawal'&&['Withdrawn','DisputedWithdrawn'].includes(observed.onChainState)){const evidence=await verifySettlement({core:await verifyRuntimeTask(await getCore(),task.id,target),taskId:task.id,payment:observed,sellerAddress:registration().registration?.SmartContractWallet?.walletAddress,unit:p.request?.RequestedFunds?.[0]?.unit===''?'lovelace':USDM});return persist(task,state,{...p,stage:evidence.verified?'settled':'awaiting-withdrawal',settlement:evidence});}
    return state;
   }
   if(p.stage==='result-saved'){

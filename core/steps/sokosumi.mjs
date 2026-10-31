@@ -35,10 +35,12 @@ export async function status(){
  items.push({label:'Runtime key',status:keyOk?'ok':'todo',detail:keyOk?'stored in the CLI vault':'imported straight into the CLI vault'});
  const ws=env.SOKOSUMI_ORGANIZATION_SLUG;
  const orgs=(await sk.workspaces().catch(()=>[])).filter(w=>w.organizationId);
- items.push({label:'Workspace',status:'ok',detail:ws?`${ws} (organization)`:`Personal Workspace (private testing)${orgs.length?` · press o to use ${orgs[0].name}`:''}`});
+ const cur=ws&&orgs.find(o=>o.slug===ws);
+ const workspaces=[{id:'personal',name:'Personal Workspace',hint:'private: only you can send it tasks'},...orgs.map(o=>({id:o.slug,name:o.name??o.slug,hint:`organization · ${o.slug}`}))];
+ items.push({label:'Workspace',status:'ok',detail:ws?`${cur?.name??ws} (organization)${orgs.length?' · press w to change':''}`:`Personal Workspace (private testing)${orgs.length===1?` · press w to use ${orgs[0].name??orgs[0].slug}`:orgs.length?` · press w to pick one of your ${orgs.length} organization Workspaces`:''}`});
  const done=v&&coworkerId&&keyOk;
  if(v&&loadConfig().vendorId!==v.id)saveConfig({vendorId:v.id});
- return {id,title,status:done?'ok':'todo',items,user,vendor:v,coworkerId,workspace:ws??'personal',organizations:orgs,headless};
+ return {id,title,status:done?'ok':'todo',items,user,vendor:v,coworkerId,workspace:ws||'personal',workspaces,organizations:orgs,headless};
 }
 export function login(){sk.login();}
 export async function loginWithKey(key){await sk.loginWithKey(key);return status();}
@@ -59,16 +61,23 @@ export async function run(){
  }
  return status();
 }
-// Move the Coworker to an organization Workspace (e.g. the event's). PENDING means an admin must approve.
-export async function useOrganization(slugOrId){
+// Which Workspace's tasks the Coworker serves: 'personal', or an organization's slug/id from status().workspaces.
+// An organization needs a Workspace connect (an external write: the UI and CLI confirm it first).
+// PENDING means an admin of that organization must approve.
+export async function useWorkspace(slugOrId){
+ if(!slugOrId||slugOrId==='personal'){
+  writeEnv({SOKOSUMI_ORGANIZATION_ID:'',SOKOSUMI_ORGANIZATION_SLUG:''});
+  log('sokosumi','Using the Personal Workspace. Restart services to pick it up.');return {pending:false,org:null};
+ }
  const s=await status();
- const org=(s.organizations??[]).find(o=>o.slug===slugOrId||o.organizationId===slugOrId)??s.organizations?.[0];
- if(!org)throw new Error('You are not a member of any organization Workspace. Join one with its invitation link first.');
+ if(!s.coworkerId||!s.vendor)throw new Error('Create the Coworker first: press enter in setup step 3 (or lokal run sokosumi).');
+ const orgs=s.organizations??[];
+ const org=orgs.find(o=>o.slug===slugOrId||o.organizationId===slugOrId);
+ if(!org)throw new Error(orgs.length?`No organization Workspace "${slugOrId}". Yours: ${orgs.map(o=>o.slug).join(', ')}`:'You are not a member of any organization Workspace. Join one with its invitation link first.');
  const r=await sk.connectWorkspace({coworkerId:s.coworkerId,vendorId:s.vendor.id,organizationId:org.organizationId});
  const access=r.connect?.access?.status??r.connect?.workspaceAccess?.status??r.connect?.status;
- if(access&&access!=='GRANTED'){log('sokosumi',`Workspace access is ${access}: ask a ${org.name} admin to approve, then press o again.`);return {pending:true,access};}
+ if(access&&access!=='GRANTED'){log('sokosumi',`Workspace access is ${access}: ask a ${org.name} admin to approve, then choose it again.`);return {pending:true,access,org};}
  writeEnv({SOKOSUMI_ORGANIZATION_ID:org.organizationId,SOKOSUMI_ORGANIZATION_SLUG:org.slug});
  log('sokosumi',`Using Workspace ${org.name}. Restart services to pick it up.`);
  return {pending:false,org};
 }
-export function usePersonal(){writeEnv({SOKOSUMI_ORGANIZATION_ID:'',SOKOSUMI_ORGANIZATION_SLUG:''});}

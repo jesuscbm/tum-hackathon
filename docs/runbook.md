@@ -21,7 +21,7 @@ sokosumi --preprod vendors me --json                  # or: vendors create --nam
 sokosumi --preprod coworkers register --personal --vendor-id VENDOR_ID --name NAME --capability tasks --json
 sokosumi --preprod coworkers api-key COWORKER_ID --json   # token → stdin of:
 sokosumi --preprod runtime key-import --coworker-id COWORKER_ID --api-key-stdin
-# TUM workspace: workspaces list --json → coworkers connect COWORKER_ID --vendor-id V --workspace-id ORG → workspaces check ORG
+# Organization Workspace (lokal workspace SLUG): workspaces list --json → coworkers connect COWORKER_ID --vendor-id V --workspace-id ORG → workspaces check ORG
 ```
 
 ## Payments (step 4)

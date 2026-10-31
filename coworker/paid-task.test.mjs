@@ -17,6 +17,11 @@ test('signed fields preserved and unsupported signed override rejected',()=>{
  assert.throws(()=>purchasePayload({...payment,forceLayer:'L1'},'nonce',registration),/cannot preserve/);
  assert.throws(()=>purchasePayload({...payment,sellerReturnAddress:'addr_test1seller'},'nonce',registration),/cannot preserve/);
  assert.throws(()=>purchasePayload({...payment,SmartContractWallet:{id:'other'}},'nonce',registration),/differs/);
+ // lokal: the quote must match what the Task asked for (its own price, e.g. ADA), not just 1 USDM.
+ assert.throws(()=>purchasePayload({...payment,RequestedFunds:[{amount:'2000000',unit:USDM}]},'nonce',registration),/differs from 1 test USDM/);
+ const ada=[{amount:'2000000',unit:''}];
+ assert.equal(purchasePayload({...payment,RequestedFunds:ada},'nonce',registration,ada).Amounts[0].unit,'');
+ assert.throws(()=>purchasePayload(payment,'nonce',registration,ada),/differs from 2 test ADA/);
 });
 test('uncertain purchase never reposted',async()=>{
  let posts=0;const adapter=await createPaidAdapter({target,registration,save:async()=>{},answer:async()=>{throw Error('unexpected model')},core:{...core,post:async()=>{posts++;throw Error('timeout')}}});

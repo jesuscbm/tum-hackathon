@@ -9,6 +9,7 @@ import {run,which} from '../core/exec.mjs';
 // Both listen on 127.0.0.1:55432 with user/database "masumi".
 export const DB_NAME=process.env.LOKAL_DB_CONTAINER||'lokal-mps-db';
 export const DB_PORT=55432;
+export const DB_VOLUME=`${DB_NAME}-data`; // named, so a removed container can be recreated with its data
 export const PGDATA=join(HOME,'pgdata');
 const BREW=['/opt/homebrew/opt/postgresql@16/bin','/usr/local/opt/postgresql@16/bin','/opt/homebrew/opt/postgresql@17/bin','/usr/local/opt/postgresql@17/bin','/opt/homebrew/bin','/usr/local/bin','/Applications/Postgres.app/Contents/Versions/latest/bin'];
 const DEB=['/usr/lib/postgresql/17/bin','/usr/lib/postgresql/16/bin','/usr/lib/postgresql/15/bin','/usr/pgsql-16/bin'];
@@ -39,16 +40,23 @@ export async function ready(kind,password){
  return (await run(join(bin,'pg_isready'),tcp.slice(0,4),{quiet:true,timeout:10000,env:pgEnv(password)})).code===0;
 }
 async function must(r,what){if(r.code!==0)throw new Error(`${what} failed: ${(r.stderr||r.stdout).trim().split('\n').slice(-3).join(' | ').slice(0,300)}`);return r;}
-// Creates (first time) and starts the database; idempotent. Called by setup and before every service start.
-export async function ensureUp(kind,password){
+const LOST='its data (payment wallets, payments) is gone with it. To start over with new wallets: lokal uninstall, then run the installer again.';
+// Creates (first time) and starts the database; idempotent. Called by setup, before every service start and by
+// lokald's database watch. expectData: the install was set up already, so never create an empty database.
+export async function ensureUp(kind,password,{expectData=false}={}){
  if(kind==='docker'){
   const ps=await run('docker',['ps','-a','--filter',`name=^${DB_NAME}$`,'--format','{{.Status}}'],{quiet:true});
-  if(!ps.stdout.trim())await must(await run('docker',['run','-d','--name',DB_NAME,'--restart','unless-stopped','-e','POSTGRES_USER=masumi','-e',`POSTGRES_PASSWORD=${password}`,'-e','POSTGRES_DB=masumi','-p',`127.0.0.1:${DB_PORT}:5432`,'postgres:16'],{source:'mps',timeout:600000}),'docker run postgres');
+  if(!ps.stdout.trim()){
+   if(ps.code!==0)throw new Error('Docker is not running: start it, then retry.');
+   if(expectData&&(await run('docker',['volume','inspect',DB_VOLUME],{quiet:true})).code!==0)throw new Error(`The database container ${DB_NAME} was deleted, and ${LOST} (A container removed without -v may have left its data in an unnamed volume: docker volume ls.)`);
+   await must(await run('docker',['run','-d','--name',DB_NAME,'--restart','unless-stopped','-e','POSTGRES_USER=masumi','-e',`POSTGRES_PASSWORD=${password}`,'-e','POSTGRES_DB=masumi','-p',`127.0.0.1:${DB_PORT}:5432`,'-v',`${DB_VOLUME}:/var/lib/postgresql/data`,'postgres:16'],{source:'mps',timeout:600000}),'docker run postgres');
+  }
   else if(!ps.stdout.startsWith('Up'))await must(await run('docker',['start',DB_NAME],{source:'mps'}),'docker start');
  }else{
   const bin=await nativeBin();if(!bin)throw new Error(`No PostgreSQL found. Install ${installHint()}, then retry.`);
   ensureDirs();
   if(!existsSync(join(PGDATA,'PG_VERSION'))){
+   if(expectData)throw new Error(`The database folder ${PGDATA} is missing, and ${LOST}`);
    const pw=join(HOME,'.pgpass-init');writeFileSync(pw,password+'\n',{mode:0o600});
    try{await must(await run(join(bin,'initdb'),['-D',PGDATA,'-U','masumi','-A','scram-sha-256','--pwfile',pw,'-E','UTF8','--no-locale'],{source:'mps',timeout:120000}),'initdb')}
    finally{rmSync(pw,{force:true})}

@@ -47,6 +47,9 @@ lokal info             # wallet, agent and Coworker IDs, links
 lokal model api URL MODEL   # use an OpenAI-compatible API (key on stdin)
 lokal login            # Sokosumi API-key sign-in (key on stdin)
 lokal network mainnet  # switch networks (asks for confirmation)
+lokal workspace        # which Sokosumi Workspace sends tasks (Personal or one of your organizations)
+lokal price 2 ADA      # what buyers pay per job (USDM or ADA; p in step 2)
+lokal buy "…"          # be your own buyer: a real paid job through the agent API (see docs/mainnet.md)
 lokal wallet export    # selling wallet recovery phrase (asks first)
 lokal run machine      # configure model runtime
 lokal run job invoice-json
@@ -86,7 +89,7 @@ The on-chain result hash covers canonical result data, including the output, pro
 
 ## Limits
 
-- Preprod by default. Mainnet is implemented but untested with real funds; Sokosumi Tasks stay on preprod (the CLI's Coworker runtime is preprod-only), so mainnet buyers use the MIP-003 agent API, which needs a public URL (`lokal set AGENT_PUBLIC_URL`).
+- Preprod by default. Mainnet is implemented but untested with real funds; Sokosumi Tasks stay on preprod (the CLI's Coworker runtime is preprod-only), so mainnet buyers use the MIP-003 agent API, which needs a public URL (`lokal set AGENT_PUBLIC_URL`). Step by step: [docs/mainnet.md](docs/mainnet.md).
 - The Masumi Payment Service needs Postgres: a Docker container, or a private cluster in `~/.local/share/lokal/pgdata` run with your own PostgreSQL binaries.
 - macOS: Apple GPU load is not shown (it needs `sudo powermetrics`); over SSH, run `security unlock-keychain` once per session so the Sokosumi CLI can use the Keychain. The macOS path is untested on real hardware.
 - Runtime auto-install supports Linux and macOS. On Windows, install Ollama separately.

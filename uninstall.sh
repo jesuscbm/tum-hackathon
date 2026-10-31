@@ -54,6 +54,9 @@ fi
 if command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$DB"; then
   docker rm -f -v "$DB" >/dev/null 2>&1 && ok "Removed Docker container $DB (payment database)"
 else skip "No payment database container"; fi
+if command -v docker >/dev/null 2>&1 && docker volume inspect "$DB-data" >/dev/null 2>&1; then
+  docker volume rm "$DB-data" >/dev/null 2>&1 && ok "Removed Docker volume $DB-data (payment database data)"
+fi
 if [ "$IMAGE" = 1 ] && command -v docker >/dev/null 2>&1 && docker image inspect postgres:16 >/dev/null 2>&1; then
   docker image rm postgres:16 >/dev/null 2>&1 && ok "Removed Docker image postgres:16" || skip "postgres:16 image in use elsewhere; kept"
 fi

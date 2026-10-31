@@ -2,7 +2,7 @@ import {existsSync,mkdirSync,readdirSync,symlinkSync,copyFileSync,writeFileSync,
 import {join} from 'node:path';
 import {COWORKER_DIR,HOME} from './paths.mjs';
 import {readEnv,writeEnv,loadConfig} from './config.mjs';
-import {loadTemplate} from '../templates/index.mjs';
+import {loadTemplate,priceFor} from '../templates/index.mjs';
 import * as sk from './sokosumi.mjs';
 import {log} from './events.mjs';
 // Several Coworkers on one machine. The first one ("main") is the coworker/ folder the wizard sets up.
@@ -19,7 +19,7 @@ function describe(id,dir,primary){
  const env=readEnv(join(dir,'.env'));
  const paid=env.PAID_TASKS_ENABLED==='true';
  return {id,dir,primary,name:env.LOKAL_COWORKER_NAME||(primary?'main':id),template:env.LOKAL_TEMPLATE||null,coworkerId:env.COWORKER_ID||null,paid,
-  ports:{eve:Number(env.EVE_PORT||21949),api:Number(env.AGENT_API_PORT||21950)},model:env.ZAI_MODEL||null,env};
+  ports:{eve:Number(env.EVE_PORT||21949),api:Number(env.AGENT_API_PORT||21950)},model:env.ZAI_MODEL||null,price:priceFor(env).display,env};
 }
 export function list(){
  const out=[describe('main',COWORKER_DIR,true)];

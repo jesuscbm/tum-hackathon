@@ -77,6 +77,23 @@ Masumi Payment Service commit `a846392…` (`pay/mps.mjs`), Ollama `v0.40.13` (`
 - Never run `lokal wallet export` (prints a recovery phrase) or read `$LOKAL_HOME/vault/`.
 - Don't claim payment without evidence: a completed Task is not a seller receipt (see `settlement.mjs`, `docs/evidence.md`).
 
+## Status (2026-10-31): added, verified only with tests and log replays
+- lokald watches the payment database (`supervisor.checkDb()`, every 15 s and on Prisma "Can't reach database"
+  lines) and starts it again; the payment service is not restarted (it reconnects). Step 4 and `lokal doctor` show
+  the database as down. New Docker containers keep their data in the named volume `lokal-mps-db-data`;
+  a prepared install never silently gets a new empty database (`ensureUp({expectData})`).
+- Payment service log: only `[error]`/`[warn]` records reach the UI; continuation lines, stack frames and known
+  noise (Mesh "fetchCostModels is not a function": harmless, the service syncs cost models from chain itself)
+  stay in the log file.
+- Workspace is chosen, not hardcoded: step 3 `w` picker, `lokal workspace [list|personal|SLUG]` (`useWorkspace`).
+- `lokal buy`: self-purchase through the agent API with the payment service's purchasing wallet (`pay/buy.mjs`).
+  Mainnet guide: `docs/mainnet.md`.
+- Prices: `AGENT_PRICE` in a Coworker's `.env` (`lokal price`, `p` in step 2) overrides its job's price
+  (`templates/index.mjs` `priceFor/fundsFor`; ADA is the empty unit). Both paid paths use it: `agent-api.mjs`
+  and `paid-task.mjs` (a Task checks the signed quote against what *it* requested, so a price change never
+  breaks a Task in flight). Registration is `Dynamic`, so changing it needs no new registration.
+Not yet run for real: `lokal buy` (preprod or mainnet), any price other than 1 USDM (ADA prices on Sokosumi Tasks especially), the database watch on a live outage.
+
 ## Status (2026-10-30, night): added, verified only with tests, mock and scratch folders
 - lokald + reattaching UI; `lokal up/down/daemon`; smoke test covers start/status/down.
 - Headless: file vault (Sokosumi CLI `auth login --api-key-stdin` / `auth status` verified against it), OAuth link capture.

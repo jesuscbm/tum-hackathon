@@ -12,6 +12,13 @@ const KINDS={
  worker:{label:'Worker',cmd:c=>({cmd:process.execPath,args:[...ENVF,'worker.mjs']}),probe:async c=>{const f=join(c.dir,'.local','worker.lock');if(!existsSync(f))return false;try{process.kill(Number(readFileSync(f,'utf8')),0);return true}catch{return false}}},
  api:{label:'Agent API (MIP-003)',paidOnly:true,cmd:c=>({cmd:process.execPath,args:[...ENVF,'--env-file-if-exists=.local/mps-runtime.env','agent-api.mjs']}),probe:async c=>{try{return (await fetch(`http://127.0.0.1:${c.ports.api}/availability`,{signal:AbortSignal.timeout(1500)})).ok}catch{return false}}},
 };
+// Payment service output for the UI: its "date │ [level] │ message" records at error/warn level, and unformatted
+// lines that mention an error. Continuation lines ("   │   │ …"), stack frames and known-harmless noise
+// (AGENTS.md, Known gotchas) stay in the log file. Mesh's own cost-model fetch fails by design: the service
+// has already synced the cost models from chain itself.
+const MPS_NOISE=/fetchCostModels is not a function|(completing|fetching) cost models|No payment contracts found|final input schema of the endpoint contains an unsupported|\sat \S.*:\d+:\d+\)?\s*$/;
+const mpsLevel=l=>/^\s+│/.test(l)||MPS_NOISE.test(l)?'debug':/│\s*\[\S*(error|warn)\S*\]/.test(l)?'info':/│\s*\[/.test(l)?'debug':/error|fail/i.test(l)?'info':'debug';
+const DB_LOST=/Can't reach database server|DatabaseNotReachable|ConnectionClosed|ECONNREFUSED 127\.0\.0\.1:55432/;
 const MPS={label:'Payment service',preStart:async()=>{await mps.ensureDb();await mps.clearStaleLocks();await mps.skipContractHistory()},cmd:()=>mps.command(),probe:()=>mps.health()};
 export const serviceId=(kind,c)=>c.primary?kind:`${kind}@${c.id}`;
 function resolve(id){
@@ -55,7 +62,10 @@ async function spawnService(id){
  const child=spawn(cmd,args,{cwd,stdio:['ignore','pipe','pipe'],env:{...process.env,...(env??{})},detached:true});
  children[id]=child;set(id,{pid:child.pid,startedAt:Date.now()});
  // The payment service logs a heartbeat every second; keep it in the log file, out of the UI.
- const pipe=d=>{for(const l of String(d).split('\n'))if(l.trim()){log(id,l,id==='mps'&&!/error|warn|fail/i.test(l)?'debug':'info');if(state[id].status==='starting')set(id,{status:'running'});}};
+ const pipe=d=>{for(const l of String(d).split('\n'))if(l.trim()){
+  log(id,l,id==='mps'?mpsLevel(l):'info');
+  if(id==='mps'&&DB_LOST.test(l))checkDb();
+  if(state[id].status==='starting')set(id,{status:'running'});}};
  child.stdout.on('data',pipe);child.stderr.on('data',pipe);
  child.on('error',e=>log(id,e.message,'error'));
  setTimeout(()=>{if(children[id]===child&&state[id].status==='starting')set(id,{status:'running'})},3000);
@@ -68,6 +78,21 @@ async function spawnService(id){
   if(r<=5)setTimeout(()=>{if(!stopping&&resolve(id))start(id).catch(e=>log(id,e.message,'error'))},Math.min(30000,1000*2**r));
  });
 }
+// Postgres can stop under a running payment service (docker stop/kill, OOM, a native cluster after sleep). The
+// service keeps answering /health and only its queries fail, so lokald watches the database and starts it again.
+// The service itself reconnects; it is not restarted (that could interrupt a payment write).
+let dbCheck=null,dbDown=0;
+const dbBack=()=>{if(dbDown){dbDown=0;log('mps','Payment database is back');set('mps',{note:null});}};
+export function checkDb(){
+ return dbCheck??=(async()=>{
+  if(!children.mps||stopping)return;
+  if(await mps.dbReady()!==false)return dbBack();
+  if(!dbDown++){log('mps','Payment database is not reachable: starting it again','error');set('mps',{note:'database down'});}
+  await mps.ensureDb().catch(e=>{if(dbDown%8===1)log('mps',`Could not start the database: ${e.message}`,'error')});
+  if(await mps.dbReady())dbBack();
+ })().catch(()=>{}).finally(()=>{dbCheck=null});
+}
+setInterval(checkDb,15000).unref();
 // One startAll at a time (lokald's own start and a UI request can overlap).
 let starting=null;
 export function startAll(){return starting??=startAllNow().finally(()=>{starting=null})}

@@ -78,7 +78,7 @@ function JobPanel({s,ui}){
    <${Text} color=${C.dim}>Tip: .md files in ~/.local/share/lokal/templates/ show up here as jobs.</${Text}></${Box}>`:t?html`<${Box} flexDirection="column">
    <${Text} color=${C.dim} wrap="wrap">${t.description||'(no description)'}</${Text}>
    <${Text} color=${C.dim} wrap="truncate-end">prompt: <${Text} color=${C.text}>${t.preview}</${Text}></${Text}>
-   <${Text}>check: <${Text} color=${t.check?.type==='none'?C.warn:C.ok}>${t.check?.type}</${Text}>${t.price?html`<${Text} color=${C.dim}>   price: ${t.price.display}</${Text}>`:null}</${Text}>
+   <${Text}>check: <${Text} color=${t.check?.type==='none'?C.warn:C.ok}>${t.check?.type}</${Text}>${t.id===s.active&&s.price?html`<${Text} color=${C.dim}>   price: <${Text} color=${C.text}>${s.price.display}</${Text}>${s.price.own?'':' (default)'} · p to change</${Text}>`:t.price?html`<${Text} color=${C.dim}>   price: ${t.price.display}</${Text}>`:null}</${Text}>
    ${sample?html`<${Text}>sample input (s for the next of ${t.samples.length}): <${Text} color=${C.accent2}>${sample.name}</${Text}> <${Text} color=${C.dim}>should ${sample.expect} the check</${Text}></${Text}>`:html`<${Text} color=${C.dim}>no sample inputs: t asks you for one</${Text}>`}
   </${Box}>`:null}
   ${ui.mode==='pickCheck'?html`<${Box} marginTop=${1} flexDirection="column"><${Text} color=${C.warn}>Pick a check for your prompt (←/→, enter):</${Text}>
@@ -90,7 +90,7 @@ function JobPanel({s,ui}){
    ${ui.tryState.done?html`<${Box} marginTop=${1}><${Badge} pass=${ui.tryState.check.pass}/><${Text} color=${C.dim}> ${ui.tryState.check.reasons.slice(0,2).join('; ')}</${Text}></${Box}>`:html`<${Spinner}/>`}
   </${Card}>`:null}
   <${Items} items=${s.items}/>
-  <${Hints} keys=${[['←/→','template'],['enter',custom?'write prompt':'use this job'],...(custom?[['f','import .md file']]:[...(t?.samples?.length?[['s','next sample'],['t','try sample']]:[['t','try it']]),['y','try your own input']])]}/>
+  <${Hints} keys=${[['←/→','template'],['enter',custom?'write prompt':'use this job'],...(custom?[['f','import .md file']]:[...(t?.samples?.length?[['s','next sample'],['t','try sample']]:[['t','try it']]),['y','try your own input']]),['p','price']]}/>
  </${Box}>`;
 }
 function SokosumiPanel({s}){
@@ -110,7 +110,7 @@ function SokosumiPanel({s}){
    <${Text} color=${C.accent2} wrap="wrap">${link(s.signIn.url)}</${Text}>
    <${Text} color=${C.dim} wrap="wrap">Also in ~/.local/share/lokal/logs/lokal.log, or run \`lokal sokosumi --preprod auth login\` for it on one line. lokAl notices the sign-in on its own.</${Text}>
   </${Card}>`:null}
-  <${Hints} keys=${[['enter',s.status==='ok'?'re-check':signedOut&&s.headless?'paste API key':'connect'],...(signedOut&&s.headless?[['b','sign-in link']]:[]),...(s.organizations?.length?[['o','use organization Workspace'],['p','personal']]:[])]}/>
+  <${Hints} keys=${[['enter',s.status==='ok'?'re-check':signedOut&&s.headless?'paste API key':'connect'],...(signedOut&&s.headless?[['b','sign-in link']]:[]),...(s.workspaces?.length>1?[['w','choose Workspace']]:[])]}/>
  </${Box}>`;
 }
 function PayPanel({s,ui,qr}){
@@ -392,14 +392,18 @@ export function App({core}){
    if(input==='y'&&!custom)form('Try it',[{key:'v',label:'Input for the model (what a buyer would send)'}],v=>tryIt(v.v),'Runs this prompt and its check on the model right now. Nothing is sent to Sokosumi.');
    if(input==='f'&&custom)form('Import a Markdown prompt',[{key:'path',label:'Path to the .md file'}],v=>attempt(()=>core.importPrompt(resolve(v.path.replace(/^~(?=\/)/,process.env.HOME??'~'))),'✔ Imported and selected'),
     'Front matter between --- lines: name, description, check (none|json|schema|regex|length|invoice), pattern / min / max / schema, price. The rest is the prompt.');
+   if(input==='p')form('Price per job',[{key:'v',label:'e.g. 1 USDM, 0.5 USDM or 2 ADA (empty: the job\'s default)',allowEmpty:true,initial:s.price?.own?s.price.display:''}],v=>attempt(()=>core.setPrice(v.v),r=>`✔ Price: ${r.display} per job`),
+    'What a buyer locks in escrow for each job, on Sokosumi Tasks and the agent API alike. You keep it only when the check passes. No new registration needed.');
    if(key.return){if(custom)editPrompt();else{await core.selectTemplate(s.templates[ui.tpl%n].id);flash(daemon?.running?'✔ Job selected; the agent and worker were restarted with it.':'✔ Job selected. The agent uses it from its next start.');refresh(sel)}}
   }
   if(id==='sokosumi'){
    const signedOut=s.items?.find(i=>i.label==='Account'&&i.status!=='ok');
    if(key.return){if(signedOut&&s.headless)form('Sokosumi sign-in',[{key:'k',label:'Sokosumi API key',secret:true}],v=>attempt(()=>core.loginWithKey(v.k),'✔ Signed in. Press enter to create your Vendor and Coworker.'),'Create the key on your laptop: https://preprod.sokosumi.com/connections → API keys. It starts with soko_preprod_.');else runStep(id);}
    if(input==='b'&&signedOut){core.login();flash('Getting a sign-in link…');setTimeout(()=>refresh(sel),1500);}
-   if(input==='o')attempt(()=>core.useOrganization(),r=>r.pending?`Waiting for a Workspace admin to approve (${r.access})`:`✔ Using ${r.org.name}. Press r on the dashboard to restart services.`);
-   if(input==='p'){core.usePersonal();flash('Back to the Personal Workspace');refresh(sel)}
+   if(input==='w'&&s.workspaces?.length>1){
+    const use=w=>attempt(()=>core.useWorkspace(w.id),r=>r.pending?`Waiting for a ${w.label} admin to approve (${r.access}); choose it again afterwards`:`✔ Using ${w.label}. Press r on the dashboard to restart services.`);
+    pick('Which Workspace sends tasks to your Coworker?',s.workspaces.map(w=>({id:w.id,label:w.name,hint:w.hint})),w=>w.id==='personal'?use(w):confirm(`Connect your Coworker to ${w.label}? Its members can then send it tasks.`,{y:['connect',()=>use(w)]}),Math.max(0,s.workspaces.findIndex(w=>w.id===s.workspace)));
+   }
   }
   if(id==='pay'){
    const need=s.items?.find(i=>i.status==='input');

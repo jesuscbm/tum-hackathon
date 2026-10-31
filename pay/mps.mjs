@@ -56,7 +56,10 @@ function writeServiceEnv(s){
 const dbKind=s=>s.LOKAL_DB_BACKEND||(s.LOKAL_PREPARED==='1'?'docker':null);
 const psql=(sql,opts)=>{const s=secrets();return db.psql(dbKind(s),s.LOKAL_DB_PASSWORD,sql,opts);};
 // Before every service start: a native cluster does not come back on its own after a reboot (Docker's does).
-export async function ensureDb(){const s=secrets();const k=dbKind(s);if(k)await db.ensureUp(k,s.LOKAL_DB_PASSWORD);}
+// A prepared install must find its data: an empty new database would silently lose the wallets.
+export async function ensureDb(){const s=secrets();const k=dbKind(s);if(k)await db.ensureUp(k,s.LOKAL_DB_PASSWORD,{expectData:s.LOKAL_PREPARED==='1'});}
+// null: no database set up yet.
+export async function dbReady(){const s=readSecretEnv(files.mpsEnv);const k=dbKind(s);return k?db.ready(k,s.LOKAL_DB_PASSWORD):null;}
 export const dbInfo=()=>{const s=readSecretEnv(files.mpsEnv);return {kind:dbKind(s)};};
 // Phase A. Safe to run before the user has a Blockfrost key.
 export async function prepare(){

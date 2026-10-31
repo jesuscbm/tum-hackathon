@@ -24,7 +24,7 @@ function bfItem(net,k){
 export async function status(){
  const env=readEnv();const net=networkOf(env);
  const [docker,native,m,w]=await Promise.all([which('docker'),db.nativeBin(),mps.status(),wallet()]);
- const kind=mps.dbInfo().kind;
+ const kind=mps.dbInfo().kind;const dbUp=kind?await mps.dbReady():null;
  // While a registration is pending, refresh it from the registry at most every 20 s (the UI polls status()).
  let r=reg.status();
  if(r.registered&&!r.confirmed&&Date.now()-lastPoll>20000){lastPoll=Date.now();r=await reg.poll().catch(()=>r);}
@@ -34,7 +34,7 @@ export async function status(){
   bfItem(NETWORKS.preprod,env.BLOCKFROST_API_KEY_PREPROD),
   ...(net.test?[]:[bfItem(net,env.BLOCKFROST_API_KEY_MAINNET)]),
   {label:'Author name',status:env.AGENT_AUTHOR?'ok':'todo',detail:env.AGENT_AUTHOR||'defaults to your Sokosumi Vendor name (public on the registry)'},
-  {label:'Database',status:kind||docker||native?'ok':'action',detail:kind==='native'?`PostgreSQL in ${db.PGDATA}`:kind==='docker'?`Docker container ${db.DB_NAME}`:docker?'Docker found: Postgres runs in a container':native?`PostgreSQL found (${native}): runs a private copy, no Docker needed`:`needs ${db.installHint()}`,command:kind||docker||native?undefined:db.installHint()},
+  {label:'Database',status:kind?(dbUp?'ok':'fail'):docker||native?'ok':'action',detail:kind&&!dbUp?`${kind==='native'?`PostgreSQL in ${db.PGDATA}`:`Docker container ${db.DB_NAME}`} is not running: press enter to start it (lokald also restarts it)`:kind==='native'?`PostgreSQL in ${db.PGDATA}`:kind==='docker'?`Docker container ${db.DB_NAME}`:docker?'Docker found: Postgres runs in a container':native?`PostgreSQL found (${native}): runs a private copy, no Docker needed`:`needs ${db.installHint()}`,command:kind||docker||native?undefined:db.installHint()},
   {label:'Payment service',status:m.up?'ok':'todo',detail:m.up?m.url:m.installed?'installed, not running':m.prepared?'prepared; wallets are created once the Blockfrost key is set':'lokAl installs your own instance (Postgres in Docker)'},
   {label:'Selling wallet',status:w.address?(funded?'ok':'action'):'todo',detail:w.address?`${w.address.slice(0,20)}…${w.address.slice(-6)} · ${w.balance?`${w.balance.ada} ${net.coin}`:w.error??'balance unknown'}${!funded&&!net.test?' · send ≥ 5 ADA to it (lokal info)':''}`:'created by the payment service',command:w.address&&!funded?(w.faucet??w.explorer):undefined},
   // Mainnet buyers reach the agent through the registry's apiBaseUrl, which must be public.
@@ -77,6 +77,7 @@ export async function setNetwork(target){
 export async function run({startMps,restartMps}={}){
  let s=await status();const net=networkOf(readEnv());
  if(!s.mps.prepared)await mps.prepare(); // no secrets needed: runs while the user fetches a Blockfrost key
+ else await mps.ensureDb(); // it may have been stopped (or killed) since
  s=await status();
  if(s.items.some(i=>i.status==='input'&&i.input?.key!=='AGENT_PUBLIC_URL'))return s;
  if(!readEnv().AGENT_AUTHOR){const v=await sk.vendor().catch(()=>null);writeEnv({AGENT_AUTHOR:v?.name??'lokal'});}

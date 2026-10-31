@@ -39,7 +39,7 @@ export async function health(){
  const all=cw.list();const live=new Set(all.filter(c=>c.coworkerId).map(c=>c.id));const paidCw=new Set(all.filter(c=>c.paid).map(c=>c.id));
  const [svcs,d,model,user]=await Promise.all([services.list(),daemon.status(),cached('model',15000,()=>modelHealth(env)),cached('sk',60000,()=>sk.whoami())]);
  const paid=paidCw.size>0;
- const [mpsUp,w]=paid?await Promise.all([mps.health(),cached('wallet',30000,()=>wallet())]):[null,null];
+ const [mpsUp,w,dbUp]=paid?await Promise.all([mps.health(),cached('wallet',30000,()=>wallet()),cached('db',10000,()=>mps.dbReady())]):[null,null,null];
  const r=reg.status();
  const part=(id,label,role,status,detail,fix,extra={})=>({id,label,role,status,detail,fix,...extra});
  const g=kind=>group(svcs,kind,s=>live.has(s.coworker??'main')&&(kind!=='api'||paidCw.has(s.coworker??'main')));
@@ -51,7 +51,7 @@ export async function health(){
   part('worker','Worker','takes Sokosumi tasks, checks answers',worker.status,worker.detail,'Worker stopped. Press r to restart services.',{pids:worker.pids}),
   part('api','Agent API','MIP-003: paid jobs from the registry',api.status,api.detail,'Agent API stopped. Press r to restart services.',{pids:api.pids}),
   part('sokosumi','Sokosumi','marketplace where buyers hire you',user===null?'fail':'ok',user?user.email:'signed out','Signed out. Open setup step 3 and sign in.'),
-  part('mps','Payments','Masumi payment service (escrow)',paid?(mpsUp?'ok':'fail'):'off',paid?(mpsUp?`up · ${net.name}`:'down'):'paid jobs not enabled','Payment service down. Press r, or open setup step 4.'),
+  part('mps','Payments','Masumi payment service (escrow)',paid?(mpsUp&&dbUp!==false?'ok':'fail'):'off',paid?(dbUp===false?'database down':mpsUp?`up · ${net.name}`:'down'):'paid jobs not enabled',dbUp===false?'Payment database down: lokald starts it again within 15 s. If it stays red, open setup step 4.':'Payment service down. Press r, or open setup step 4.'),
   part('wallet','Wallet','selling wallet: receives the money',paid?(ada==null?'warn':ada>=1?'ok':'fail'):'off',paid?(ada==null?(w?.error??'balance unknown'):`${ada} ${net.coin}${w.balance.usdm?` · ${w.balance.usdm} USDM`:''}`):'—',net.test?'Selling wallet needs test ADA from the dispenser.':'Send a few ADA to the selling wallet (lokal info).'),
   part('registry','Registry','agent identity on Cardano',paid?(r.confirmed?'ok':r.registered?'warn':'fail'):'off',paid?(r.confirmed?`${r.agentIdentifier?.slice(0,12)}…`:r.state??'not registered'):'—','Registration not confirmed yet.'),
   part('daemon','lokald','keeps everything running',d.running?'ok':'fail',d.running?`pid ${d.pid} · up ${uptime(Date.now()-d.startedAt)}`:'not running','Background services are not running. Press r to start them.'),

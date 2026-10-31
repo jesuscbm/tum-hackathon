@@ -19,7 +19,7 @@ export async function mps(path,{body,token,method}={}){
  const t=token??readSecretEnv(files.mpsEnv).ADMIN_KEY;
  const r=await fetch(mpsUrl()+'/api/v1'+path,{method:method??(body?'POST':'GET'),headers:{token:t??'','content-type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)});
  const j=await r.json().catch(()=>({}));
- if(!r.ok||(j.status&&j.status!=='success'))throw new Error(`Payment service ${path} HTTP ${r.status}`);
+ if(!r.ok||(j.status&&j.status!=='success'))throw new Error(`Payment service ${path.split('?')[0]} HTTP ${r.status}${j.error?.message?`: ${String(j.error.message).slice(0,200)}`:''}`);
  return j.data??j;
 }
 export const exists=existsSync;

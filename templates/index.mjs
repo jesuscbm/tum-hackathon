@@ -6,7 +6,7 @@
 //   description: Summarises a contract as JSON
 //   check: json                  # none | json | schema | regex | length | invoice (or a JSON object)
 //   pattern: ^OK                 # regex check;  min/max: length check;  schema: {...} for schema
-//   price: 1                     # USDM
+//   price: 1                     # USDM (or "2 ADA")
 //   ---
 //   You are ... (the system prompt)
 import {existsSync,readFileSync,readdirSync,writeFileSync,mkdirSync} from 'node:fs';
@@ -55,10 +55,22 @@ export function templateFromMarkdown(text,fallbackId){
  if(!body.trim())throw new Error('The prompt (the text after the front matter) is empty');
  const cfg=checkFromMeta(meta);
  check(cfg,'','x'); // throws on a broken check config
- const amount=Number(meta.price??1);
- if(!(amount>0))throw new Error('price must be a positive number of USDM');
  return {id,name:String(meta.name??id),description:String(meta.description??''),inputLabel:String(meta.input??meta.inputLabel??'Describe what you need'),
-  check:cfg,price:{amount:String(Math.round(amount*1e6)),unit:'USDM',display:`${amount} USDM`},prompt:body.endsWith('\n')?body:body+'\n',samples:[]};
+  check:cfg,price:parsePrice(meta.price??1),prompt:body.endsWith('\n')?body:body+'\n',samples:[]};
+}
+// The price a Coworker charges per job: AGENT_PRICE in its .env (lokal price), else its job's price, else 1 USDM.
+export function priceFor(env=process.env){
+ if(env.AGENT_PRICE)return {...parsePrice(env.AGENT_PRICE),own:true};
+ try{return loadTemplate(env.LOKAL_TEMPLATE||'freeform').price??parsePrice(1)}catch{return parsePrice(1)}
+}
+// Masumi RequestedFunds for a price: ADA is the empty unit, USDM the network's token.
+export const fundsFor=(p,net)=>[{unit:p.unit==='ADA'?'':net.usdm,amount:String(p.amount)}];
+// "1", "1 USDM" or "2 ADA" → {amount (6 decimals), unit, display}. ADA saves a mainnet tester from buying USDM.
+export function parsePrice(v){
+ const m=String(v).trim().match(/^(\d+(?:\.\d+)?)\s*(usdm|ada)?$/i);const amount=Number(m?.[1]);
+ if(!(amount>0))throw new Error(`price must be a positive number of USDM or ADA, like "1" or "2 ADA" (got "${v}")`);
+ const unit=(m[2]??'USDM').toUpperCase();
+ return {amount:String(Math.round(amount*1e6)),unit,display:`${amount} ${unit}`};
 }
 const mdFiles=root=>existsSync(root)?readdirSync(root).filter(f=>f.endsWith('.md')&&ID.test(f.slice(0,-3))).map(f=>join(root,f)):[];
 function readMd(file){return {...templateFromMarkdown(readFileSync(file,'utf8'),basename(file,'.md')),id:basename(file,'.md'),dir:dirname(file),file};}
